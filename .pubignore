@@ -1,0 +1,8 @@
+.dart_tool/
+.git/
+.github/
+.packages
+pubspec.lock
+build/
+coverage/
+RELEASING.md

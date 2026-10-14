@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Dart ${{ matrix.sdk }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        sdk: ['3.6.2', stable]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: ${{ matrix.sdk }}
+      - run: dart pub get
+      - run: dart analyze --fatal-infos
+      - run: dart test
+      - run: dart run example/local_demo.dart
+      - name: Check formatting
+        if: matrix.sdk == 'stable'
+        run: dart format --output=none --set-exit-if-changed bin lib test example
+      - name: Verify package
+        if: matrix.sdk == 'stable' && matrix.os == 'ubuntu-latest'
+        run: dart pub publish --dry-run
+      - name: Verify global installation
+        env:
+          PUB_CACHE: ${{ runner.temp }}/dep-sync-pub-cache
+        run: |
+          dart pub global activate --source path .
+          dart pub global run dep_sync:dep_sync --version
+          dart pub global run dep_sync:dep_pull --help
+          dart pub global run dep_sync:dep_push --help

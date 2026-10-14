@@ -1,0 +1,6 @@
+workspace:
+  search_roots:
+    - apps
+    - packages
+  default_clone_root: packages
+ignore_packages: []
