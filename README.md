@@ -1,15 +1,78 @@
 # dep_sync
 
-Keep Git dependency repositories at the commits declared by a Dart or Flutter
-app, and pin the app back to the commits you have developed locally.
+Keep local Git dependency repositories in sync with your Dart or Flutter app.
 
-`dep-sync pull` clones missing repositories and checks out declared refs.
-`dep-sync push` pins dependency refs to local HEAD commits. It does **not** run
-`git push`.
+## The problem
 
-The consumer's `pubspec.yaml` is the source of truth. A shared
-`.dep-sync/manifest.yaml` sets search locations and optional package exclusions.
-There is no repository list to maintain.
+A multi-repository app might depend on a shared UI library, an authentication
+package, and an API client, each maintained in its own Git repository. The app's
+`pubspec.yaml` records which refs it needs, while developers keep separate local
+clones to inspect, debug, and change those packages.
+
+Those two views of the project can drift apart. Switching the app to a release
+branch does not switch its sibling repositories. Committing a fix in a dependency
+does not update the app's declared ref. Keeping everything aligned becomes a
+manual task repeated across repositories and developers.
+
+Pub already downloads Git dependencies for package resolution. The extra work
+is maintaining the editable checkouts around the app and recording the commits
+that should be shared with the team.
+
+## The pain points
+
+- **Setting up a workspace:** a new developer has to find each dependency URL,
+  clone the repository, and check out the right ref.
+- **Switching app branches or releases:** local dependency checkouts can remain
+  on yesterday's code, so the code being inspected may differ from the version
+  declared by the app.
+- **Making changes across repositories:** after committing dependency changes,
+  developers must copy the correct commit hashes into the app's pubspec without
+  missing a package or editing the wrong declaration.
+- **Handing work to a teammate:** instructions such as “pull these three repos
+  and use these branches” leave room for different local states. Moving branches
+  make that harder to reproduce over time.
+- **Keeping exceptions under control:** some packages are managed separately
+  and should be left alone during a synchronization run.
+
+## The solution
+
+dep-sync uses the consuming app's `pubspec.yaml` as the source of truth and
+provides two directions of synchronization:
+
+| Command | Direction | What it does |
+| --- | --- | --- |
+| `dep-sync pull` | App refs → local checkouts | Finds matching repositories by Git origin, clones missing ones, and checks out the declared refs. |
+| `dep-sync push` | Local commits → app refs | Reads dependency HEAD commits and pins their hashes in the app's pubspec. |
+
+For example, an app release may pin `shared_widgets` to one commit and
+`auth_client` to another. Run `dep-sync pull` from that app to align both local
+checkouts. After developing, committing, and pushing a dependency fix with Git,
+run `dep-sync push` to record the new commit in the app. Commit that pubspec
+change so a teammate can pull the same dependency commits.
+
+**`dep-sync push` updates dependency refs; it does not upload commits.** Push the
+dependency commits to their Git remotes before sharing the updated app pubspec.
+Use commit hashes when you need reproducible checkouts; branch refs can move.
+
+A small `.dep-sync/manifest.yaml` at the shared workspace root defines where
+repositories are searched for and cloned. `ignore_packages` excludes dependencies
+you manage separately. Adding or removing a dependency happens in the app's
+pubspec—there is no second repository list to maintain.
+
+The default workflow protects dirty checkouts, rejects ambiguous repository
+matches, and validates all managed dependencies before writing pinned refs.
+Destructive pull behavior requires explicit flags.
+
+## How it fits your workflow
+
+dep-sync manages **direct Git dependency checkouts and their declared refs**.
+You keep your existing Git remotes, branches, SDK versions, and build workflow.
+For live development against the local clones, configure path overrides or a
+workspace yourself; cloning alone does not redirect Pub to those checkouts.
+
+The tool runs through Git without selecting Flutter/FVM versions, changing SDK
+constraints, generating workspace files, or running Melos. Your normal Pub or
+Flutter commands remain responsible for package resolution and builds.
 
 ## Requirements and installation
 
