@@ -12,10 +12,9 @@ void main() {
         ['run', p.join(packageRoot, 'bin', '$bin.dart'), ...args],
         workingDirectory: packageRoot,
       );
-  test('version agrees with package metadata and VERSION', () async {
+  test('version agrees with package metadata', () async {
     expect(packageVersion,
         loadYaml(File('pubspec.yaml').readAsStringSync())['version']);
-    expect(packageVersion, File('VERSION').readAsStringSync().trim());
     for (final name in ['dep_sync', 'dep_pull', 'dep_push']) {
       final result = await cli(name, ['--version']);
       expect(result.exitCode, 0);

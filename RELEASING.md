@@ -4,8 +4,9 @@ The public repository is https://github.com/yhhCh405/dep-sync. The package uses
 MIT with Ye Htet Hein as its copyright holder. Release from this Dart package;
 do not include private repositories, credentials, or internal operational files.
 
-1. Confirm the intended version matches `pubspec.yaml`, `VERSION`,
-   `lib/src/cli/dep_sync_cli.dart`, and `CHANGELOG.md`.
+1. Set the release version in `pubspec.yaml`, update `packageVersion` in
+   `lib/src/cli/dep_sync_cli.dart`, and add the matching `CHANGELOG.md` entry.
+   The CLI test checks that `packageVersion` matches `pubspec.yaml`.
 2. Run `dart pub get`, `dart analyze --fatal-infos`, `dart test`, and
    `dart run example/local_demo.dart`. Check formatting with the command in README.
 3. Check the GitHub Actions matrix for the exact release commit on all platforms
