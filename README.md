@@ -291,6 +291,23 @@ the error and rerun. A failed command exits nonzero.
 
 ## Development
 
+The source separates CLI parsing, synchronization use cases, and infrastructure
+adapters. Classes and methods include Dart documentation comments describing
+purpose, usage, side effects, and failure behavior.
+
+External operations have explicit contracts:
+
+- `GitOperations` defines repository operations used by pull, push, and discovery;
+  `GitClient` implements them with command-line Git.
+- `PubspecStore` defines declaration reads and complete ref updates;
+  `PubspecRepository` implements YAML preservation and atomic replacement.
+- `ProcessExecutor` defines command execution; `ProcessRunner` implements it
+  through Dart processes without shell interpolation.
+
+Both use cases accept `git` and `pubspecs` constructor arguments, and `GitClient`
+accepts a `runner`. Defaults use the production adapters. Tests can inject
+substitutes at these boundaries without inheriting concrete implementations.
+
 ```sh
 dart pub get
 dart format --output=none --set-exit-if-changed bin lib test example

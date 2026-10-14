@@ -4,11 +4,24 @@ import 'package:yaml/yaml.dart';
 import 'package:yaml_edit/yaml_edit.dart';
 
 import '../domain/git_dependency.dart';
+import '../domain/ports/pubspec_store.dart';
 import 'manifest_repository.dart';
 
-class PubspecRepository {
+/// YAML file implementation of [PubspecStore] for consumer declarations.
+///
+/// Use [readGitDependencies] to inspect direct Git entries and [updateGitRefs]
+/// to save a fully resolved batch. The YAML editor retains unrelated declarations,
+/// comments, and SDK configuration. No dependency resolution or SDK process runs.
+class PubspecRepository implements PubspecStore {
+  /// Creates a stateless pubspec reader and ref editor.
   const PubspecRepository();
 
+  /// Reads validated Git declarations from the three supported pubspec sections.
+  ///
+  /// The [ignored] names relax `tag_pattern` handling but are still returned for
+  /// shared-repository checks. Hosted, SDK, and path dependencies are not included.
+  /// Malformed YAML or declarations throw before any file is changed.
+  @override
   List<GitDependency> readGitDependencies(File file,
       {Set<String> ignored = const {}}) {
     final document = loadYaml(file.readAsStringSync());
@@ -72,7 +85,12 @@ class PubspecRepository {
     return result;
   }
 
-  /// Builds the whole edit before atomically replacing the original file.
+  /// Builds all [refs] edits from [original], then replaces [file] using a rename.
+  ///
+  /// Git shorthand becomes a URL/ref map; other Git fields and unrelated YAML
+  /// are retained. A changed source file aborts before writing. The temporary file
+  /// is created beside the original so replacement stays on the same filesystem.
+  @override
   void updateGitRefs(File file, Map<GitDependency, String> refs,
       {required String original}) {
     final editor = YamlEditor(original);

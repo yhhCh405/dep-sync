@@ -1,15 +1,26 @@
 import 'dart:io';
+
 import 'package:path/path.dart' as p;
+
+import '../domain/ports/git_operations.dart';
 import '../domain/workspace_manifest.dart';
-import 'git_client.dart';
 import 'git_url_normalizer.dart';
 import 'manifest_repository.dart';
 
+/// Discovers dependency checkouts and validates filesystem destinations.
+///
+/// Construct with the operation's [GitOperations], call [index] once, then [find]
+/// using each normalized repository identity. Call the appropriate protection
+/// methods before cloning, checkout, or replacement; discovery itself is read-only.
 class RepositoryLocator {
+  /// Uses [git] to inspect repository markers and origin URLs.
   RepositoryLocator(this.git);
-  final GitClient git;
+  final GitOperations git;
   final normalizer = const GitUrlNormalizer();
 
+  /// Builds a workspace-relative directory after lexical and symlink checks.
+  ///
+  /// The path need not exist yet. This method does not create directories.
   Directory safeDirectory(Directory workspace, String relative) {
     validateRelativePath(relative);
     var current = workspace;
@@ -25,10 +36,16 @@ class RepositoryLocator {
     return current;
   }
 
+  /// Indexes origins under configured search roots and the default clone root.
+  ///
+  /// Skips symlinks, hidden children, build output, and node_modules. Retains all
+  /// matches for each identity so [find] can reject ambiguity rather than guess.
   Future<Map<String, List<Directory>>> index(
       Directory workspace, WorkspaceManifest manifest) async {
     final repositories = <String, Directory>{};
     final visited = <String>{};
+
+    /// Recurses through searchable directories once, recording Git markers.
     void visit(Directory directory) {
       if (!visited.add(directory.path) || !directory.existsSync()) return;
       if (git.isRepository(directory)) repositories[directory.path] = directory;
@@ -61,6 +78,10 @@ class RepositoryLocator {
     return index;
   }
 
+  /// Selects the sole checkout for a normalized [identity].
+  ///
+  /// Returns null when absent and throws when multiple checkouts match, even if
+  /// they happen to be at the same commit.
   Directory? find(Map<String, List<Directory>> index, String identity) {
     final matches = index[identity] ?? [];
     if (matches.length > 1) {
@@ -70,6 +91,7 @@ class RepositoryLocator {
     return matches.isEmpty ? null : matches.single;
   }
 
+  /// Rejects a checkout that is the consumer directory or one of its ancestors.
   void protectConsumer(Directory repository, Directory consumer) {
     if (p.equals(repository.path, consumer.path) ||
         p.isWithin(repository.path, consumer.path)) {
@@ -78,6 +100,7 @@ class RepositoryLocator {
     }
   }
 
+  /// Rejects any occupied clone destination, including files and symlinks.
   void protectNewTarget(Directory target) {
     if (FileSystemEntity.typeSync(target.path, followLinks: false) !=
         FileSystemEntityType.notFound) {
@@ -86,6 +109,9 @@ class RepositoryLocator {
     }
   }
 
+  /// Rejects full replacement of worktrees, submodules, or nested repositories.
+  ///
+  /// Dirty files and unpublished commits are checked separately through Git.
   void protectFresh(Directory repository) {
     if (File(p.join(repository.path, '.git')).existsSync()) {
       throw StateError(

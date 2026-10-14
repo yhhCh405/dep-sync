@@ -5,14 +5,25 @@ import 'package:yaml/yaml.dart';
 
 import '../domain/workspace_manifest.dart';
 
+/// Parses `.dep-sync/manifest.yaml` into validated [WorkspaceManifest] settings.
+///
+/// Use [load] for a known workspace root or [parse] for YAML already in memory.
+/// Only workspace locations and package exclusions are accepted. Legacy project
+/// lists, invalid field types, and escaping paths fail with [FormatException].
 class ManifestRepository {
+  /// Creates a stateless manifest reader.
   const ManifestRepository();
 
+  /// Reads and validates the manifest beneath [workspaceRoot]; file errors propagate.
   WorkspaceManifest load({required Directory workspaceRoot}) => parse(
         File(p.join(workspaceRoot.path, '.dep-sync', 'manifest.yaml'))
             .readAsStringSync(),
       );
 
+  /// Validates YAML [source] and applies defaults for omitted settings.
+  ///
+  /// This performs lexical path checks only; repository discovery separately
+  /// checks existing filesystem paths for symlinks.
   WorkspaceManifest parse(String source) {
     final document = loadYaml(source);
     if (document is! YamlMap) {
@@ -52,6 +63,7 @@ class ManifestRepository {
     );
   }
 
+  /// Rejects unsupported keys so configuration mistakes cannot silently take effect.
   void _keys(Map map, Set<String> allowed, String location) {
     for (final key in map.keys) {
       if (!allowed.contains(key)) {
@@ -61,6 +73,7 @@ class ManifestRepository {
     }
   }
 
+  /// Checks that a YAML field is a list of nonempty strings, or throws.
   List<String> _strings(Object? value, String field) {
     if (value is! List ||
         value.any((item) => item is! String || item.trim().isEmpty)) {
@@ -70,6 +83,10 @@ class ManifestRepository {
   }
 }
 
+/// Rejects absolute, traversing, Git-metadata, or unsupported path spellings.
+///
+/// Use for manifest directories and repository-relative package paths before
+/// joining them to a trusted root. This lexical check does not inspect symlinks.
 void validateRelativePath(String path) {
   if (path.trim().isEmpty ||
       p.posix.isAbsolute(path) ||

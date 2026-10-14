@@ -5,8 +5,14 @@ import '../domain/dep_push_use_case.dart';
 import '../domain/options.dart';
 import '../infrastructure/git_client.dart';
 
+/// Version printed by all CLI entrypoints; kept in sync with pubspec.yaml by a test.
 const packageVersion = '0.1.0';
 
+/// Parses CLI arguments, dispatches commands, and reports expected failures.
+///
+/// Executable entrypoints call this with their argument list. Usage, input, Git,
+/// and filesystem failures are translated into messages and process exit codes;
+/// the function does not call `exit`, allowing outstanding cleanup to complete.
 Future<void> runDepSync(List<String> arguments) async {
   final runner = CommandRunner<int>('dep-sync',
       'Synchronize Git dependencies across Dart and Flutter repositories.')
@@ -40,7 +46,12 @@ Future<void> runDepSync(List<String> arguments) async {
   }
 }
 
+/// Maps `dep-sync pull` flags to [PullOptions] and invokes [DepPullUseCase].
+///
+/// Registered by [runDepSync]; let the command runner parse arguments before
+/// calling [run]. Repository and filesystem behavior stays in the use case.
 class _PullCommand extends Command<int> {
+  /// Registers checkout, replacement, fallback, directory, and verbosity options.
   _PullCommand() {
     argParser
       ..addFlag('repo-update',
@@ -65,11 +76,18 @@ class _PullCommand extends Command<int> {
           help: 'Consumer package directory (defaults to current directory).')
       ..addFlag('verbose', negatable: false, help: 'Enable diagnostic output.');
   }
+
+  /// Subcommand token accepted by the command runner.
   @override
   String get name => 'pull';
+
+  /// Summary shown in CLI help.
   @override
   String get description =>
       'Clone and check out dependencies declared in the consumer pubspec.yaml.';
+
+  /// Validates positional arguments and delegates parsed options to the use case.
+  /// Returns zero on success; failures propagate to [runDepSync].
   @override
   Future<int> run() async {
     if (argResults!.rest.isNotEmpty) {
@@ -88,18 +106,30 @@ class _PullCommand extends Command<int> {
   }
 }
 
+/// Maps `dep-sync push` options to local commit pinning via [DepPushUseCase].
+///
+/// Registered by [runDepSync]. The command name refers to writing refs back into
+/// the consumer pubspec; uploading commits remains a separate Git operation.
 class _PushCommand extends Command<int> {
+  /// Registers consumer-directory and verbosity options for ref pinning.
   _PushCommand() {
     argParser
       ..addOption('cwd',
           help: 'Consumer package directory (defaults to current directory).')
       ..addFlag('verbose', negatable: false, help: 'Enable diagnostic output.');
   }
+
+  /// Subcommand token accepted by the command runner.
   @override
   String get name => 'push';
+
+  /// Summary shown in CLI help.
   @override
   String get description =>
       'Pin dependency refs to local HEAD commits. Does not run git push.';
+
+  /// Validates positional arguments and delegates parsed options to the use case.
+  /// Returns zero on success; failures propagate to [runDepSync].
   @override
   Future<int> run() async {
     if (argResults!.rest.isNotEmpty) {
@@ -113,5 +143,6 @@ class _PushCommand extends Command<int> {
   }
 }
 
+/// Recognizes the supported truthy values of `DEP_SYNC_VERBOSE`, ignoring case.
 bool _envVerbose() => const {'1', 'true', 'yes', 'on'}
     .contains((Platform.environment['DEP_SYNC_VERBOSE'] ?? '').toLowerCase());

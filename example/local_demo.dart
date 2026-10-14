@@ -5,6 +5,7 @@ import 'package:dep_sync/src/domain/options.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
+/// Demonstrates clone-and-pin behavior in a temporary workspace, then removes it.
 Future<void> main() async {
   final temporary = Directory.systemTemp.createTempSync('dep_sync_demo_');
   try {
@@ -55,6 +56,7 @@ dependencies:
   }
 }
 
+/// Runs Git for the local demo with hooks disabled, returning stdout or throwing.
 Future<String> git(Directory directory, List<String> args) async {
   final result = await Process.run(
       'git',

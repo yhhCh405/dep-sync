@@ -1,18 +1,41 @@
 import 'dart:io';
+
 import 'package:path/path.dart' as p;
+
 import '../infrastructure/git_client.dart';
 import '../infrastructure/git_url_normalizer.dart';
+import '../infrastructure/pubspec_repository.dart';
 import '../infrastructure/repository_locator.dart';
 import 'logger.dart';
 import 'options.dart';
+import 'ports/git_operations.dart';
+import 'ports/pubspec_store.dart';
 import 'sync_context.dart';
 
+/// Synchronizes local dependency repositories to the consumer's declared refs.
+///
+/// Call `await DepPullUseCase().run(PullOptions(cwd: consumerPath))`. Inject
+/// [GitOperations] or [PubspecStore] to replace external operations while keeping
+/// validation and checkout planning. The use case applies package exclusions and
+/// prepares all refs before moving existing checkouts; it does not edit pubspecs,
+/// SDK settings, or workspace files.
 class DepPullUseCase {
-  DepPullUseCase({GitClient? git}) : _git = git ?? GitClient();
-  final GitClient _git;
+  /// Uses the Git command-line and YAML file adapters unless substitutes are supplied.
+  DepPullUseCase({GitOperations? git, PubspecStore? pubspecs})
+      : _git = git ?? GitClient(),
+        _pubspecs = pubspecs ?? const PubspecRepository();
+  final GitOperations _git;
+  final PubspecStore _pubspecs;
 
+  /// Validates, prepares, and applies the synchronization requested by [options].
+  ///
+  /// Fails before checkout changes for invalid refs, unsafe destinations, ignored
+  /// repository conflicts, or unapproved local changes. Fetch metadata may change
+  /// during preparation; application across multiple repositories is not atomic.
+  /// Temporary clones are cleaned up unless needed to recover a failed replacement.
   Future<void> run(PullOptions options) async {
-    final context = SyncContext.load(options.cwd, validateRefs: true);
+    final context =
+        SyncContext.load(options.cwd, validateRefs: true, pubspecs: _pubspecs);
     final logger = Logger(verbose: options.verbose);
     logger.debug(
         'Workspace: ${context.workspace.path}; ignored packages: ${context.manifest.ignorePackages.join(', ')}');
@@ -132,6 +155,10 @@ class DepPullUseCase {
     logger.ok('Synchronized ${plans.length} repository(s).');
   }
 
+  /// Resolves a declaration, fetching when necessary and applying branch options.
+  ///
+  /// Returns a commit hash or throws when neither the requested ref nor the
+  /// optional fallback resolves. It changes fetch metadata, never working files.
   Future<String> _resolve(Directory repository, String ref, PullOptions options,
       Logger logger) async {
     var fetched = false;
@@ -170,7 +197,13 @@ class DepPullUseCase {
   }
 }
 
+/// Mutable preparation state for one repository in a pull operation.
+///
+/// Created after destination checks, then populated with a prepared checkout
+/// and resolved hash before application. [staging] owns temporary clones and
+/// replacement backups; [preserveStaging] keeps recovery data on restore failure.
 class _PullPlan {
+  /// Records the dependency group, final checkout location, and preexisting state.
   _PullPlan(this.group, this.target, this.existed);
   final RepositoryDependency group;
   final Directory target;
