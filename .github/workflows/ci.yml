@@ -69,12 +69,12 @@ jobs:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            echo "::notice::Tag $RELEASE_TAG already exists; skipping tag creation. Retry its failed tag workflow run to publish."
+            exit 0
+          fi
           if [ -z "$RELEASE_TOKEN" ]; then
             echo '::error::Configure RELEASE_TOKEN with repository Contents read/write access so tag pushes trigger the publishing workflow.'
-            exit 1
-          fi
-          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
-            echo "::error::Tag $RELEASE_TAG already exists. Rerun its failed publishing job or bump the package version; existing tags are never moved."
             exit 1
           fi
           git tag "$RELEASE_TAG" "$GITHUB_SHA"
