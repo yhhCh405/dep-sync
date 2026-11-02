@@ -34,7 +34,9 @@ job fails with setup instructions. Tests do not require this secret.
    on pub.dev. Only a 404 means an unpublished version. Network/server errors
    fail instead of being interpreted as permission to release.
 5. For an unpublished version, CI creates `v<version>` at that main commit using
-   `RELEASE_TOKEN`. Tags are immutable; an existing tag causes an actionable failure.
+   `RELEASE_TOKEN`. If the tag already exists, tag creation is skipped successfully,
+   without requiring the token or moving the tag. Retry the existing tag workflow
+   run if its build or publication failed.
 6. The tag push triggers CI again. After its matrix passes, the publish job verifies
    the tag matches the pubspec and its commit is in main history, obtains an OIDC
    token through setup-dart, runs the publication dry run, and publishes.
