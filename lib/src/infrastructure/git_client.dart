@@ -4,6 +4,7 @@ import 'package:path/path.dart' as p;
 
 import '../domain/ports/git_operations.dart';
 import 'process_runner.dart';
+import 'pub_workspace_repository.dart';
 
 /// Command-line Git implementation of [GitOperations].
 ///
@@ -78,14 +79,36 @@ class GitClient implements GitOperations {
   /// Checks porcelain status; include ignored files before replacing a whole clone.
   @override
   Future<bool> hasLocalChanges(Directory directory,
-          {bool includeIgnored = false}) async =>
-      (await require(directory, [
-        'status',
-        '--porcelain',
-        '--untracked-files=all',
-        if (includeIgnored) '--ignored'
-      ]))
-          .isNotEmpty;
+      {bool includeIgnored = false}) async {
+    final result = await run(directory, [
+      'status',
+      '--porcelain',
+      '-z',
+      '--untracked-files=all',
+      if (includeIgnored) '--ignored',
+    ]);
+    if (!result.succeeded) {
+      throw StateError(
+          'Git status failed in ${directory.path}: ${redact(result.stderr)}');
+    }
+    for (final entry
+        in result.stdout.split('\u0000').where((s) => s.isNotEmpty)) {
+      // Only exact, untracked generated overrides are configuration artifacts.
+      // Tracked changes, edited artifacts, and fresh replacement checks stay protected.
+      if (!includeIgnored &&
+          entry.startsWith('?? ') &&
+          p.basename(entry.substring(3)) == 'pubspec_overrides.yaml') {
+        final file = File(p.join(directory.path, entry.substring(3)));
+        if (FileSystemEntity.typeSync(file.path, followLinks: false) ==
+                FileSystemEntityType.file &&
+            file.readAsStringSync() == generatedResolutionOverride) {
+          continue;
+        }
+      }
+      return true;
+    }
+    return false;
+  }
 
   /// Checks HEAD and all refs, including stashes, against locally recorded origin refs.
   @override

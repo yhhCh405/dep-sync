@@ -1,9 +1,11 @@
+# yaml-language-server: $schema=../../../schema/manifest.schema.json
 workspace:
   search_roots:
     - libraries/shared
     - libraries/features
     - products
     - demos
+  use_resolution_workspace: false
   default_clone_root: libraries/vendor
 ignore_packages:
   - external_sdk

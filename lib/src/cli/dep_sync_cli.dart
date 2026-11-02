@@ -6,7 +6,12 @@ import '../domain/options.dart';
 import '../infrastructure/git_client.dart';
 
 /// Version printed by all CLI entrypoints; kept in sync with pubspec.yaml by a test.
-const packageVersion = '0.1.1';
+const packageVersion = '0.2.0';
+
+/// Prints the product notice used by the pull and push executable aliases.
+void printDepSyncNotice() {
+  stdout.writeln('DEP-SYNC\nGit Multi-Repos Dependencies Synchronization\n');
+}
 
 /// Parses CLI arguments, dispatches commands, and reports expected failures.
 ///

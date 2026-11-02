@@ -35,7 +35,10 @@ class ManifestRepository {
     if (workspace is! Map) {
       throw FormatException('workspace must be a map.');
     }
-    _keys(workspace, {'search_roots', 'default_clone_root'}, 'workspace');
+    _keys(
+        workspace,
+        {'search_roots', 'default_clone_root', 'use_resolution_workspace'},
+        'workspace');
     final searchRoots = workspace.containsKey('search_roots')
         ? _strings(workspace['search_roots'], 'workspace.search_roots')
         : ['apps', 'packages'];
@@ -46,6 +49,14 @@ class ManifestRepository {
     }
     for (final path in [...searchRoots, cloneRoot]) {
       validateRelativePath(path);
+    }
+    final useResolutionWorkspace =
+        workspace.containsKey('use_resolution_workspace')
+            ? workspace['use_resolution_workspace']
+            : false;
+    if (useResolutionWorkspace is! bool) {
+      throw FormatException(
+          'workspace.use_resolution_workspace must be a boolean.');
     }
     final ignored = document.containsKey('ignore_packages')
         ? _strings(document['ignore_packages'], 'ignore_packages')
@@ -60,6 +71,7 @@ class ManifestRepository {
       searchRoots: searchRoots,
       defaultCloneRoot: cloneRoot,
       ignorePackages: ignored.toSet(),
+      useResolutionWorkspace: useResolutionWorkspace,
     );
   }
 

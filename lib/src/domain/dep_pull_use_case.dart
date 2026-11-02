@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import '../infrastructure/git_client.dart';
 import '../infrastructure/git_url_normalizer.dart';
 import '../infrastructure/pubspec_repository.dart';
+import '../infrastructure/pub_workspace_repository.dart';
 import '../infrastructure/repository_locator.dart';
 import 'logger.dart';
 import 'options.dart';
@@ -17,8 +18,8 @@ import 'sync_context.dart';
 /// Call `await DepPullUseCase().run(PullOptions(cwd: consumerPath))`. Inject
 /// [GitOperations] or [PubspecStore] to replace external operations while keeping
 /// validation and checkout planning. The use case applies package exclusions and
-/// prepares all refs before moving existing checkouts; it does not edit pubspecs,
-/// SDK settings, or workspace files.
+/// prepares all refs before moving existing checkouts. Opt-in Pub workspace setup
+/// writes owned root/override files without editing package SDK constraints.
 class DepPullUseCase {
   /// Uses the Git command-line and YAML file adapters unless substitutes are supplied.
   DepPullUseCase({GitOperations? git, PubspecStore? pubspecs})
@@ -47,6 +48,11 @@ class DepPullUseCase {
       throw FormatException('--fallback-branch requires a valid branch name.');
     }
     if (context.repositories.isEmpty) {
+      if (context.manifest.useResolutionWorkspace) {
+        final plan = await _prepareWorkspace(context, []);
+        plan.apply();
+        logger.ok('Prepared Pub workspace (${plan.memberCount} packages).');
+      }
       logger.info('No managed Git dependencies.');
       return;
     }
@@ -108,6 +114,9 @@ class DepPullUseCase {
           await _git.checkout(plan.prepared!, plan.hash!, force: false);
         }
       }
+      final workspacePlan = context.manifest.useResolutionWorkspace
+          ? await _prepareWorkspace(context, plans)
+          : null;
       for (final plan in plans) {
         if (plan.staging == null) {
           // Recheck after network operations in case the working tree changed.
@@ -144,6 +153,11 @@ class DepPullUseCase {
         logger.ok(
             '${plan.group.packages.map((dep) => dep.name).toSet().join(', ')} at ${plan.hash} (${p.relative(plan.target.path, from: context.workspace.path)})');
       }
+      if (workspacePlan != null) {
+        workspacePlan.apply();
+        logger.ok(
+            'Prepared Pub workspace (${workspacePlan.memberCount} packages).');
+      }
     } finally {
       for (final plan in plans) {
         final staging = plan.staging;
@@ -153,6 +167,37 @@ class DepPullUseCase {
       }
     }
     logger.ok('Synchronized ${plans.length} repository(s).');
+  }
+
+  /// Reads selected Git trees during preflight and working overrides when retained.
+  Future<PubWorkspacePlan> _prepareWorkspace(
+      SyncContext context, List<_PullPlan> plans) {
+    return const PubWorkspaceRepository().prepare(
+      workspace: context.workspace,
+      consumer: context.consumer,
+      packages: [
+        for (final plan in plans)
+          for (final dependency in plan.group.packages)
+            Directory(p.join(plan.target.path, dependency.path)),
+      ],
+      ignored: context.manifest.ignorePackages,
+      readFile: (path) async {
+        for (final plan in plans) {
+          if (!p.isWithin(plan.target.path, path)) continue;
+          final relative =
+              p.relative(path, from: plan.target.path).replaceAll('\\', '/');
+          // Retained local overrides are configuration, not committed package source.
+          if (p.basename(path) == 'pubspec_overrides.yaml' &&
+              plan.staging == null) {
+            final file = File(path);
+            if (file.existsSync()) return file.readAsStringSync();
+          }
+          return _git.readFileAtCommit(plan.prepared!, plan.hash!, relative);
+        }
+        final file = File(path);
+        return file.existsSync() ? file.readAsStringSync() : null;
+      },
+    );
   }
 
   /// Resolves a declaration, fetching when necessary and applying branch options.

@@ -21,6 +21,18 @@ void main() {
       expect(result.stdout.toString(), contains(packageVersion));
     }
   });
+  test('aliases print the product notice once before output', () async {
+    for (final name in ['dep_pull', 'dep_push']) {
+      final result = await cli(name, ['--version']);
+      expect(result.exitCode, 0);
+      final output = result.stdout.toString();
+      const notice = 'DEP-SYNC\nGit Multi-Repos Dependencies Synchronization\n';
+      expect(output, startsWith(notice));
+      expect('DEP-SYNC'.allMatches(output).length, 1);
+      expect(output.indexOf('version'),
+          greaterThan(output.indexOf('Synchronization')));
+    }
+  });
   test('all executable entrypoints provide help', () async {
     for (final name in ['dep_sync', 'dep_pull', 'dep_push']) {
       final result = await cli(name, ['--help']);

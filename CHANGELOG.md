@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.0
+
+- Print the DEP-SYNC product notice from the dep-pull and dep-push aliases.
+- Keep the publishable Dart 3 CLI constraint; generated unpublished workspace
+  roots require Dart 3.6 or later without an explicit upper bound.
+
+- Add opt-in `workspace.use_resolution_workspace` to prepare Pub workspace roots
+  and resolution overrides after a successful pull, without rewriting SDK constraints.
+- Include managed package paths, recursive local dependencies, and explicit nested
+  workspace members; preserve existing user configuration and detect conflicts.
+- Track generated files for safe updates and stale override cleanup.
+- Add a manifest JSON Schema for VS Code YAML hover help, completion, and validation.
+- Demonstrate Pub workspace resolution in example workspace 2.
+- Add automatic version tagging after successful main CI and OIDC publication from
+  validated tags; document required release-token and pub.dev configuration.
+
 ## 0.1.1
 - Updated document and examples
 
