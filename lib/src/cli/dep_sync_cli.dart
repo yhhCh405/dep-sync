@@ -6,7 +6,7 @@ import '../domain/options.dart';
 import '../infrastructure/git_client.dart';
 
 /// Version printed by all CLI entrypoints; kept in sync with pubspec.yaml by a test.
-const packageVersion = '0.2.0';
+const packageVersion = '0.2.1';
 
 /// Formats the alias notice, with optional terminal color and equal-width borders.
 String formatDepSyncNotice({bool ansi = false}) {

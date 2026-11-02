@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1
+
+- Refresh the README with clearer onboarding, workspace examples, configuration
+  guidance, and navigation.
+- Correct example commit hashes and document SchemaStore registration progress.
+- Remove the redundant parent example manifest; each sample workspace retains
+  its own configuration.
+- Skip existing release tags safely and document publication retries.
+
 ## 0.2.0
 
 - Print the DEP-SYNC product notice from the dep-pull and dep-push aliases.
