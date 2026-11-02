@@ -6,7 +6,7 @@ import '../domain/options.dart';
 import '../infrastructure/git_client.dart';
 
 /// Version printed by all CLI entrypoints; kept in sync with pubspec.yaml by a test.
-const packageVersion = '0.1.0';
+const packageVersion = '0.1.1';
 
 /// Parses CLI arguments, dispatches commands, and reports expected failures.
 ///

@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.1
+- Updated document and examples
+
 ## 0.1.0
 
 - Introduce `dep-sync pull` and `dep-sync push`, plus `dep-pull` and `dep-push`
