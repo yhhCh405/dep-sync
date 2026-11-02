@@ -1,123 +1,101 @@
 # dep_sync
 
-Keep local Git dependency repositories in sync with your Dart or Flutter app.
+**Clone the Git packages your app needs, check out the right versions, and save
+package changes back to your app's `pubspec.yaml`.**
 
-## The problem
+dep_sync is a command-line tool for Dart and Flutter teams that keep an app and
+its shared packages in separate Git repositories. Install it once, then run
+`dep-sync pull` or `dep-sync push` from your app's folder.
 
-A multi-repository app might depend on a shared UI library, an authentication
-package, and an API client, each maintained in its own Git repository. The app's
-`pubspec.yaml` records which refs it needs, while developers keep separate local
-clones to inspect, debug, and change those packages.
+## A workspace example
 
-Those two views of the project can drift apart. Switching the app to a release
-branch does not switch its sibling repositories. Committing a fix in a dependency
-does not update the app's declared ref. Keeping everything aligned becomes a
-manual task repeated across repositories and developers.
+Imagine you work on a shopping app with two shared packages. Each folder below
+is a separate Git repository:
 
-Pub already downloads Git dependencies for package resolution. The extra work
-is maintaining the editable checkouts around the app and recording the commits
-that should be shared with the team.
+```text
+shop_workspace/
+├── apps/
+│   └── shop_app/            # Flutter app
+│       └── pubspec.yaml
+└── packages/
+    ├── shared_widgets/      # Shared UI package
+    │   └── pubspec.yaml
+    └── auth_client/         # Login package
+        └── pubspec.yaml
+```
 
-## The pain points
+The app declares the packages as Git dependencies in
+`apps/shop_app/pubspec.yaml`:
 
-- **Setting up a workspace:** a new developer has to find each dependency URL,
-  clone the repository, and check out the right ref.
-- **Switching app branches or releases:** local dependency checkouts can remain
-  on yesterday's code, so the code being inspected may differ from the version
-  declared by the app.
-- **Making changes across repositories:** after committing dependency changes,
-  developers must copy the correct commit hashes into the app's pubspec without
-  missing a package or editing the wrong declaration.
-- **Handing work to a teammate:** instructions such as “pull these three repos
-  and use these branches” leave room for different local states. Moving branches
-  make that harder to reproduce over time.
-- **Keeping exceptions under control:** some packages are managed separately
-  and should be left alone during a synchronization run.
+```yaml
+dependencies:
+  shared_widgets:
+    git:
+      url: git@github.com:your-org/shared_widgets.git
+      ref: a12bc34de56f7890123456789abcdef012345678
+  auth_client:
+    git:
+      url: git@github.com:your-org/auth_client.git
+      ref: b23cd45ef67890123456789abcdef01234567890
+```
 
-## The solution
+Here, `ref` pins an exact Git commit. The URLs and hashes above are illustrative
+placeholders; replace them with your repositories and actual commit hashes.
 
-dep-sync uses the consuming app's `pubspec.yaml` as the source of truth and
-provides two directions of synchronization:
+### What goes wrong without synchronization?
 
-| Command | Direction | What it does |
-| --- | --- | --- |
-| `dep-sync pull` | App refs → local checkouts | Finds matching repositories by Git origin, clones missing ones, and checks out the declared refs. |
-| `dep-sync push` | Local commits → app refs | Reads dependency HEAD commits and pins their hashes in the app's pubspec. |
+- **Joining the project:** you must find and clone every package repository,
+  then check out the versions the app expects.
+- **Switching app branches:** the app may now require `shared_widgets` at
+  a specific commit, while your local copy still contains code from another release.
+- **Sharing a package fix:** after committing changes in `auth_client`, you
+  must copy its commit hash into the app's pubspec so teammates use that fix.
 
-For example, an app release may pin `shared_widgets` to one commit and
-`auth_client` to another. Run `dep-sync pull` from that app to align both local
-checkouts. After developing, committing, and pushing a dependency fix with Git,
-run `dep-sync push` to record the new commit in the app. Commit that pubspec
-change so a teammate can pull the same dependency commits.
+`flutter pub get` downloads Git dependencies into Pub's cache. It does not keep
+these separate, editable repositories in sync with your app.
 
-**`dep-sync push` updates dependency refs; it does not upload commits.** Push the
-dependency commits to their Git remotes before sharing the updated app pubspec.
-Use commit hashes when you need reproducible checkouts; branch refs can move.
+### What does dep_sync do?
 
-A small `.dep-sync/manifest.yaml` at the shared workspace root defines where
-repositories are searched for and cloned. `ignore_packages` excludes dependencies
-you manage separately. Adding or removing a dependency happens in the app's
-pubspec—there is no second repository list to maintain.
+| Run from `apps/shop_app` | Result |
+| --- | --- |
+| `dep-sync pull` | Reads the app's Git dependencies, clones missing repositories into `packages/`, and checks out their declared refs. Reuses existing repositories by matching their Git origin URL. |
+| `dep-sync push` | Reads the current commits in the local package repositories and writes those commit hashes into the app's Git dependency `ref` fields. |
 
-The default workflow protects dirty checkouts, rejects ambiguous repository
-matches, and validates all managed dependencies before writing pinned refs.
-Destructive pull behavior requires explicit flags.
+**`dep-sync push` saves commit hashes in the pubspec.** Upload package commits
+with `git push` so teammates can fetch them.
 
-## How it fits your workflow
+## Install
 
-dep-sync manages **direct Git dependency checkouts and their declared refs**.
-You keep your existing Git remotes, branches, SDK versions, and build workflow.
-For live development against the local clones, configure path overrides or a
-workspace yourself; cloning alone does not redirect Pub to those checkouts.
-
-The tool runs through Git without selecting Flutter/FVM versions, changing SDK
-constraints, generating workspace files, or running Melos. Your normal Pub or
-Flutter commands remain responsible for package resolution and builds.
-
-## Requirements and installation
-
-- Dart 3.6 or later, below 4.0, to run the CLI.
-- Git on `PATH` and access to your dependency repositories (SSH keys or your
-  normal Git HTTPS credential helper).
-- macOS, Linux, or Windows.
-
-After the package is published to pub.dev:
+You need Dart **3.6 or later, below 4.0**, Git, and access to the package
+repositories. macOS, Linux, and Windows are supported.
 
 ```sh
 dart pub global activate dep_sync
+dep-sync --version
 ```
 
-To install from this repository before publication:
+This is a globally installed CLI; you do not need to add it to your app's
+`dependencies`.
 
-```sh
-git clone https://github.com/yhhCh405/dep-sync.git
-cd dep-sync
-dart pub global activate --source path .
-```
+Both `dart` and the Pub cache's executable directory must be on `PATH`. The
+default executable directory is `$HOME/.pub-cache/bin` on macOS/Linux and
+`%LOCALAPPDATA%\Pub\Cache\bin` on Windows. A custom `PUB_CACHE` changes it.
+If a launcher reports `dart: command not found`, add your Dart SDK's `bin`
+directory to `PATH`; a shell alias such as `dart="fvm dart"` is insufficient.
 
-Add your Pub cache's `bin` directory to `PATH` if Dart prints a warning. Its
-default location is `$HOME/.pub-cache/bin` on macOS/Linux and
-`%LOCALAPPDATA%\Pub\Cache\bin` on Windows. A custom `PUB_CACHE` changes this path.
+To install a local checkout of this tool instead, run
+`dart pub global activate --source path .` from the dep_sync source directory.
 
-The CLI's Dart requirement applies only to the CLI. It does not inspect, select,
-install, or modify the consumer's Dart, Flutter, or FVM version. It does not run
-Pub or Melos, generate workspaces, or edit SDK constraints or override files.
+## Set up and pull your packages
 
-## Quick start
+### 1. Put your app under a shared parent folder
 
-Create a shared parent folder and clone your app into it:
+Start with your app cloned into `shop_workspace/apps/shop_app`. The `packages`
+folder can be empty; dep_sync will clone missing dependencies there.
 
-```text
-my_project/
-├── .dep-sync/
-│   └── manifest.yaml
-├── apps/
-│   └── my_app/
-│       └── pubspec.yaml
-└── packages/
-```
+### 2. Add the workspace configuration
 
-Create `my_project/.dep-sync/manifest.yaml`:
+Create `shop_workspace/.dep-sync/manifest.yaml` with this content:
 
 ```yaml
 workspace:
@@ -129,40 +107,142 @@ workspace:
 ignore_packages: []
 ```
 
-In `apps/my_app/pubspec.yaml`, declare the Git dependencies you need:
+Your starting layout is now:
 
-```yaml
-dependencies:
-  shared_widgets:
-    git:
-      url: git@github.com:your-org/shared_widgets.git
-      ref: main
-      # For a package below the repository root, add:
-      # path: packages/shared_widgets
+```text
+shop_workspace/
+├── .dep-sync/
+│   └── manifest.yaml        # Where to find and clone repositories
+├── apps/
+│   └── shop_app/
+│       └── pubspec.yaml     # Which Git packages and versions the app needs
+└── packages/               # Empty, or contains your existing clones
 ```
 
-Run from the consumer's directory:
+`search_roots` lists folders to search for existing repositories.
+`default_clone_root` is where missing repositories are cloned. All paths are
+relative to `shop_workspace`. Keep the dependency list in the app's pubspec;
+the manifest only configures locations and optional exclusions.
+
+### 3. Run pull from the app folder
+
+With Git dependencies declared as in the example above, run:
 
 ```sh
-cd my_project/apps/my_app
+cd shop_workspace/apps/shop_app
 dep-sync pull
 ```
 
-The tool finds the nearest ancestor containing `.dep-sync/manifest.yaml`,
-finds existing checkouts by their Git origin, and clones missing ones into
-`packages/<repository-name>`. It validates each package's `git.path` and name at
-the selected commit, then checks out a **detached HEAD**. Existing local branches
-are preserved. Use `git switch -c my-change` in a dependency before developing
-new commits there.
+The tool finds `.dep-sync/manifest.yaml` by looking up through parent folders.
+On a successful first run, both repositories are checked out at their declared
+commit hashes, giving you the workspace shown above.
+Existing matching clones are reused. Uncommitted changes are protected by default.
 
-**Cloning does not change how Dart resolves dependencies.** Git dependencies in
-your pubspec still resolve through Pub's Git cache. For live local development,
-use your own path overrides or an existing workspace setup. Run your usual
-`dart pub get`, `flutter pub get`, or bootstrap workflow yourself. dep-sync leaves
-that configuration under your control.
+Pull checks out a **detached HEAD**: the selected commit is checked out without
+moving an existing local branch. Before editing a dependency, create a branch
+there, for example `git switch -c fix-login`.
 
-For a runnable demonstration that uses only local Git repositories, see
-[the example](example/README.md).
+For a package inside a larger repository, add `path` under its `git` declaration,
+for example `path: packages/auth_client`. dep_sync clones the repository and
+checks that the package exists at that path.
+
+### 4. Use the local packages while developing
+
+Your app still resolves Git dependencies through Pub's cache after a pull. To
+make Flutter use your editable local copies, you can create
+`apps/shop_app/pubspec_overrides.yaml` yourself:
+
+```yaml
+dependency_overrides:
+  shared_widgets:
+    path: ../../packages/shared_widgets
+  auth_client:
+    path: ../../packages/auth_client
+```
+
+Then run `flutter pub get` from `apps/shop_app` (`dart pub get` for a Dart app).
+Local edits in those package folders can now be used by the app. Keep this
+machine-local override file out of version control if that is your team's policy.
+Remove or update the overrides when you want to use the declared Git versions again.
+
+If your team already uses path overrides or a Dart/Flutter workspace, keep that
+setup. dep_sync manages repository checkouts and Git refs; you continue to run
+your normal package resolution, Flutter/FVM, and Melos commands yourself.
+
+## Example: share a login fix with your team
+
+Starting from `shop_workspace/apps/shop_app`:
+
+```sh
+cd ../../packages/auth_client
+git switch -c fix-login
+# Edit the package, then commit the files you changed.
+git add .
+git commit -m "Fix login"
+git push -u origin fix-login
+
+cd ../../apps/shop_app
+dep-sync push
+git diff -- pubspec.yaml
+```
+
+For example, if the login fix is commit
+`0123456789abcdef0123456789abcdef01234567`, its declaration changes from:
+
+```yaml
+  auth_client:
+    git:
+      url: git@github.com:your-org/auth_client.git
+      ref: b23cd45ef67890123456789abcdef01234567890
+```
+
+To:
+
+```yaml
+  auth_client:
+    git:
+      url: git@github.com:your-org/auth_client.git
+      ref: 0123456789abcdef0123456789abcdef01234567
+```
+
+`dep-sync push` pins **all managed Git dependencies**, including `shared_widgets`,
+to their current local commits. Keep their working trees clean and review the
+whole pubspec diff. Refresh the app's lockfile with your normal Pub workflow when
+appropriate, then commit and push the app changes using Git.
+
+After teammates pull the updated app with Git, they run `dep-sync pull` from its
+folder to check out the same package commits. Commit hashes keep this handoff
+reproducible; branch names can move over time.
+
+## More workspace layouts
+
+See the [three example workspaces](example/README.md) for actual manifests,
+app pubspecs, and package source:
+
+- [Standalone app and package repositories](example/example-workspace-1/README.md).
+- [Multiple apps and packages inside shared repositories](example/example-workspace-2/README.md), using `git.path`.
+- [Nested apps and custom search/clone roots](example/example-workspace-3/README.md), including renamed checkouts and ignored dependencies.
+
+`apps/` and `packages/` are defaults, not required folder names. For example,
+a team using `products/`, `demos/`, and `libraries/` can configure:
+
+```yaml
+workspace:
+  search_roots:
+    - libraries/shared
+    - libraries/features
+    - products
+    - demos
+  default_clone_root: libraries/vendor
+ignore_packages: []
+```
+
+Run from the selected app or pass its path with `--cwd`. Each invocation manages
+one app's direct Git declarations. Repository locations must remain inside the
+workspace; the clone root is also searched automatically.
+
+For an automated check using temporary local Git fixtures, run
+`dart run example/local_demo.dart` from this tool's source checkout.
 
 ## Everyday workflow
 

@@ -1,0 +1,17 @@
+name: merchant_app
+publish_to: none
+environment:
+  sdk: ^3.6.0
+dependencies:
+  flutter:
+    sdk: flutter
+  core_interface:
+    git:
+      url: https://github.com/your-org/flutter-core.git
+      ref: c34de56fa7890123456789abcdef012345678901
+      path: core_interface
+  core_utils:
+    git:
+      url: https://github.com/your-org/flutter-core.git
+      ref: c34de56fa7890123456789abcdef012345678901
+      path: core_utils

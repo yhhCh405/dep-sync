@@ -1,0 +1,17 @@
+name: checkout_demo
+publish_to: none
+environment:
+  sdk: ^3.6.0
+dependencies:
+  flutter:
+    sdk: flutter
+  core_utils:
+    git:
+      url: https://github.com/your-org/flutter-core.git
+      ref: c34de56fa7890123456789abcdef012345678901
+      path: core_utils
+  checkout_ui:
+    git:
+      url: https://github.com/your-org/checkout-feature.git
+      ref: b23cd45ef67890123456789abcdef01234567890
+      path: checkout_ui

@@ -1,0 +1,9 @@
+workspace:
+  search_roots:
+    - libraries/shared
+    - libraries/features
+    - products
+    - demos
+  default_clone_root: libraries/vendor
+ignore_packages:
+  - external_sdk

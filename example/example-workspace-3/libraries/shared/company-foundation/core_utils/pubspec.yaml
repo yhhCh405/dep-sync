@@ -1,0 +1,5 @@
+name: core_utils
+description: Sample package for the dep_sync workspace example.
+publish_to: none
+environment:
+  sdk: ^3.6.0

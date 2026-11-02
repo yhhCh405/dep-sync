@@ -13,7 +13,7 @@ class Logger {
   void info(String message) => print('[i] $message');
 
   /// Writes a successful operation message.
-  void ok(String message) => print('[ok] $message');
+  void ok(String message) => print('✓ $message');
 
   /// Writes a warning without interrupting the current operation.
   void warn(String message) => print('[!] $message');

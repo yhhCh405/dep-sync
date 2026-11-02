@@ -1,5 +1,10 @@
 include: package:lints/recommended.yaml
 
+# Standalone Flutter templates use their own SDK/dependencies after copying.
+analyzer:
+  exclude:
+    - example/example-workspace-*/**
+
 linter:
   rules:
     prefer_single_quotes: true

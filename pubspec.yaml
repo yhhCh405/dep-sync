@@ -1,5 +1,5 @@
 name: dep_sync
-description: Synchronize Git dependency checkouts across Dart and Flutter repositories, ignore selected packages, and pin local commits without changing SDK configuration.
+description: A CLI to clone Git dependencies for Dart and Flutter apps, check out the versions in pubspec.yaml, and save local package commits back to it.
 version: 0.1.0
 repository: https://github.com/yhhCh405/dep-sync
 homepage: https://yehtethein.dev

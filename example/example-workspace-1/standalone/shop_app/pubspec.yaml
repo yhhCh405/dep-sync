@@ -1,0 +1,15 @@
+name: shop_app
+publish_to: none
+environment:
+  sdk: ^3.6.0
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_widgets:
+    git:
+      url: https://github.com/your-org/shared_widgets.git
+      ref: a12bc34de56f7890123456789abcdef012345678
+  auth_client:
+    git:
+      url: https://github.com/your-org/auth_client.git
+      ref: b23cd45ef67890123456789abcdef01234567890

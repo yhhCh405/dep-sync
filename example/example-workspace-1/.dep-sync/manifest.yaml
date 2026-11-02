@@ -1,0 +1,4 @@
+workspace:
+  search_roots: [packages]
+  default_clone_root: packages
+ignore_packages: []
