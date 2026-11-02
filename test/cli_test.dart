@@ -26,12 +26,24 @@ void main() {
       final result = await cli(name, ['--version']);
       expect(result.exitCode, 0);
       final output = result.stdout.toString();
-      const notice = 'DEP-SYNC\nGit Multi-Repos Dependencies Synchronization\n';
-      expect(output, startsWith(notice));
+      expect(output, startsWith(formatDepSyncNotice()));
+      expect(output,
+          contains('Git Multi-Repos Workspace Dependencies Synchronization'));
+      expect(output, isNot(contains('\x1b[')));
       expect('DEP-SYNC'.allMatches(output).length, 1);
       expect(output.indexOf('version'),
           greaterThan(output.indexOf('Synchronization')));
     }
+  });
+  test('notice has aligned borders and optional color without changing layout',
+      () {
+    final plain = formatDepSyncNotice();
+    final lines = plain.trim().split('\n');
+    expect(lines, hasLength(4));
+    expect(lines.map((line) => line.length).toSet(), hasLength(1));
+    final colored = formatDepSyncNotice(ansi: true);
+    expect(colored, contains('\x1b[1;36m'));
+    expect(colored.replaceAll(RegExp(r'\x1b\[[0-9;]*m'), ''), plain);
   });
   test('all executable entrypoints provide help', () async {
     for (final name in ['dep_sync', 'dep_pull', 'dep_push']) {

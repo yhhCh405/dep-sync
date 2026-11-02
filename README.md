@@ -412,9 +412,14 @@ dep-sync push [options]
 `dep-pull` and `dep-push` print this notice before their command output:
 
 ```text
-DEP-SYNC
-Git Multi-Repos Dependencies Synchronization
+╭────────────────────────────────────────────────────────────╮
+│                          DEP-SYNC                          │
+│   Git Multi-Repos Workspace Dependencies Synchronization   │
+╰────────────────────────────────────────────────────────────╯
 ```
+
+Color-capable terminals show a bold cyan title and muted borders/subtitle.
+Redirected output and terminals with `NO_COLOR` set omit color codes.
 
 `dep-pull` and `dep-push` are executable aliases. Both commands support
 `--cwd <consumer-directory>` and `--verbose`. `DEP_SYNC_VERBOSE=1` also enables

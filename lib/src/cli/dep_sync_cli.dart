@@ -8,9 +8,28 @@ import '../infrastructure/git_client.dart';
 /// Version printed by all CLI entrypoints; kept in sync with pubspec.yaml by a test.
 const packageVersion = '0.2.0';
 
-/// Prints the product notice used by the pull and push executable aliases.
+/// Formats the alias notice, with optional terminal color and equal-width borders.
+String formatDepSyncNotice({bool ansi = false}) {
+  const title = 'DEP-SYNC';
+  const subtitle = 'Git Multi-Repos Workspace Dependencies Synchronization';
+  final width = subtitle.length + 6;
+  String center(String text) =>
+      text.padLeft(text.length + (width - text.length) ~/ 2).padRight(width);
+  String muted(String text) => ansi ? '\x1b[2m$text\x1b[0m' : text;
+  final heading = center(title);
+  final styledHeading = ansi ? '\x1b[1;36m$heading\x1b[0m' : heading;
+  return '\n${muted('╭${'─' * width}╮')}\n'
+      '${muted('│')}$styledHeading${muted('│')}\n'
+      '${muted('│')}${muted(center(subtitle))}${muted('│')}\n'
+      '${muted('╰${'─' * width}╯')}\n';
+}
+
+/// Prints the product notice; redirects and NO_COLOR receive no ANSI sequences.
 void printDepSyncNotice() {
-  stdout.writeln('DEP-SYNC\nGit Multi-Repos Dependencies Synchronization\n');
+  final ansi = stdout.hasTerminal &&
+      stdout.supportsAnsiEscapes &&
+      !Platform.environment.containsKey('NO_COLOR');
+  stdout.writeln(formatDepSyncNotice(ansi: ansi));
 }
 
 /// Parses CLI arguments, dispatches commands, and reports expected failures.
