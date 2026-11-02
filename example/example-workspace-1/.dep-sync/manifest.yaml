@@ -1,4 +1,6 @@
+# yaml-language-server: $schema=../../../schema/manifest.schema.json
 workspace:
   search_roots: [packages]
+  use_resolution_workspace: false
   default_clone_root: packages
 ignore_packages: []

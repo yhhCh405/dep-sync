@@ -1,0 +1,5 @@
+{
+  "yaml.schemas": {
+    "./schema/manifest.schema.json": ["**/.dep-sync/manifest.yaml"]
+  }
+}

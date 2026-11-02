@@ -6,3 +6,7 @@ pubspec.lock
 build/
 coverage/
 RELEASING.md
+
+# Include the example workspace configuration files in the published package.
+!example/**/.dep-sync/
+!example/**/.dep-sync/manifest.yaml

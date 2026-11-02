@@ -7,7 +7,7 @@ pubspecs, minimal Dart source, and a `.dep-sync/manifest.yaml`.
 | Workspace | Pattern |
 | --- | --- |
 | [example-workspace-1](example-workspace-1/README.md) | `standalone/shop_app` with one package per Git repository under `packages/`. |
-| [example-workspace-2](example-workspace-2/README.md) | Two standalone apps sharing repositories that each contain several packages, declared using `git.path`. |
+| [example-workspace-2](example-workspace-2/README.md) | Two standalone apps sharing repositories that each contain several packages, declared using `git.path`, with Pub workspace generation enabled. |
 | [example-workspace-3](example-workspace-3/README.md) | `products/`, `demos/`, and `libraries/` instead of conventional folder names; nested apps, renamed clones, and an ignored dependency. |
 
 Start with a workspace README for its folder tree and commands. The `your-org`
@@ -38,3 +38,9 @@ push, and removes them afterward. Its local URLs are test fixtures; the three
 workspace templates above demonstrate the remote URLs used in team projects.
 
 See the [main README](../README.md) for installation and the full command reference.
+
+The manifests include schema modelines for VS Code YAML hover help in this
+source checkout. When copying a workspace elsewhere, copy
+`schema/manifest.schema.json` from the source root into the new workspace's
+`.dep-sync/` folder and change its modeline to
+`# yaml-language-server: $schema=./manifest.schema.json`.

@@ -49,6 +49,7 @@ From this workspace root:
 ```sh
 cd standalone/customer_app
 dep-sync pull
+flutter pub get
 dep-sync push
 ```
 
@@ -65,8 +66,17 @@ and upload them with `git push`. Then run `dep-sync push` from the app folder to
 pin **all managed Git dependencies** to their current local commits. Review and
 commit the app's pubspec changes. Push does not upload package commits.
 
-Cloning packages does not redirect Flutter to those folders. Use your team's
-path overrides or Pub workspace setup for local development, then run your normal
-Pub/Flutter/Melos commands. dep_sync does not generate that configuration or select
-an SDK. These templates omit platform scaffolding; they illustrate dependency
+This workspace enables `workspace.use_resolution_workspace: true`. Its app and
+package pubspecs declare `resolution: workspace`. After pull, dep_sync generates
+a root pubspec listing the selected app and package paths, so `flutter pub get`
+can resolve them as local workspace members without path overrides. Run Pub
+manually; dep_sync does not select Flutter/FVM or run Melos.
+
+The generated root follows the app you select. Pulling for the merchant app
+replaces the generated membership with that app's required packages, not all
+standalone apps in this directory. Existing user-owned root pubspecs and overrides
+must already be compatible; they are preserved. Members need Dart SDK lower
+bounds of at least 3.6.0. See the [workspace-generation rules](../../README.md#optional-pub-workspace-generation).
+
+These templates omit platform scaffolding; they illustrate dependency
 configuration rather than a complete generated Flutter application.

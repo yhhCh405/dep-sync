@@ -9,6 +9,7 @@ class WorkspaceManifest {
   const WorkspaceManifest({
     this.searchRoots = const ['apps', 'packages'],
     this.defaultCloneRoot = 'packages',
+    this.useResolutionWorkspace = false,
     this.ignorePackages = const {},
   });
 
@@ -17,6 +18,9 @@ class WorkspaceManifest {
 
   /// Relative parent for new clones; also searched for existing repositories.
   final String defaultCloneRoot;
+
+  /// Whether pull prepares a Pub workspace for the selected consumer.
+  final bool useResolutionWorkspace;
 
   /// Exact dependency names excluded from both synchronization and ref pinning.
   final Set<String> ignorePackages;
