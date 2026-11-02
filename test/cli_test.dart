@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:dep_sync/src/cli/dep_sync_cli.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -11,6 +12,8 @@ void main() {
         Platform.resolvedExecutable,
         ['run', p.join(packageRoot, 'bin', '$bin.dart'), ...args],
         workingDirectory: packageRoot,
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8,
       );
   test('version agrees with package metadata', () async {
     expect(packageVersion,
