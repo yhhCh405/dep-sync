@@ -181,6 +181,21 @@ class DepPullUseCase {
             Directory(p.join(plan.target.path, dependency.path)),
       ],
       ignored: context.manifest.ignorePackages,
+      isTrackedFile: (path) async {
+        for (final plan in plans) {
+          if (p.isWithin(plan.target.path, path)) {
+            final relative =
+                p.relative(path, from: plan.target.path).replaceAll('\\', '/');
+            if (await _git.readFileAtCommit(
+                    plan.prepared!, plan.hash!, relative) !=
+                null) {
+              return true;
+            }
+            break;
+          }
+        }
+        return _git.isTrackedFile(File(path));
+      },
       readFile: (path) async {
         for (final plan in plans) {
           if (!p.isWithin(plan.target.path, path)) continue;

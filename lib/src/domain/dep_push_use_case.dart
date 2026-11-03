@@ -1,5 +1,7 @@
 import '../infrastructure/git_client.dart';
 import '../infrastructure/pubspec_repository.dart';
+import '../infrastructure/push_receipt_repository.dart';
+import '../version.dart';
 import '../infrastructure/repository_locator.dart';
 import 'git_dependency.dart';
 import 'logger.dart';
@@ -13,14 +15,18 @@ import 'sync_context.dart';
 /// Call `await DepPushUseCase().run(PushOptions(cwd: consumerPath))` after
 /// committing dependency changes. Inject [GitOperations] and [PubspecStore] to
 /// substitute repository access or persistence. All managed packages are validated
-/// before the single pubspec save; this operation never runs `git push`.
+/// before the single pubspec save. A successful run refreshes the consumer's
+/// dep-sync.lock receipt; this operation never runs `git push`.
 class DepPushUseCase {
   /// Uses the Git command-line and YAML file adapters unless substitutes are supplied.
-  DepPushUseCase({GitOperations? git, PubspecStore? pubspecs})
+  DepPushUseCase(
+      {GitOperations? git, PubspecStore? pubspecs, DateTime Function()? clock})
       : _git = git ?? GitClient(),
-        _pubspecs = pubspecs ?? const PubspecRepository();
+        _pubspecs = pubspecs ?? const PubspecRepository(),
+        _clock = clock ?? DateTime.now;
   final GitOperations _git;
   final PubspecStore _pubspecs;
+  final DateTime Function() _clock;
 
   /// Resolves every managed dependency and saves its local HEAD as `git.ref`.
   ///
@@ -34,6 +40,7 @@ class DepPushUseCase {
     logger.debug(
         'Workspace: ${context.workspace.path}; ignored packages: ${context.manifest.ignorePackages.join(', ')}');
     if (context.repositories.isEmpty) {
+      _save(context, {}, logger);
       logger.info('No managed Git dependencies.');
       return;
     }
@@ -57,9 +64,29 @@ class DepPushUseCase {
         if (dependency.ref != hash) updates[dependency] = hash;
       }
     }
-    _pubspecs.updateGitRefs(context.pubspec, updates,
-        original: context.original);
+    _save(context, updates, logger);
     logger.ok(
         'Pinned ${updates.length} Git ref(s). This does not push commits; publish dependency commits with Git before sharing the consumer pubspec.');
+  }
+
+  /// Stages the receipt before saving refs, then refreshes it after a successful save.
+  void _save(
+      SyncContext context, Map<GitDependency, String> updates, Logger logger) {
+    final receipt = const PushReceiptRepository().prepare(context.consumer,
+        completedAt: _clock(), toolVersion: depSyncVersion);
+    try {
+      _pubspecs.updateGitRefs(context.pubspec, updates,
+          original: context.original);
+      try {
+        receipt.commit();
+      } catch (error) {
+        throw StateError(
+            'Refs were saved but dep-sync.lock could not be refreshed. '
+            'Fix the receipt error and rerun dep-push: $error');
+      }
+    } finally {
+      receipt.dispose();
+    }
+    logger.ok('Refreshed dep-sync.lock.');
   }
 }

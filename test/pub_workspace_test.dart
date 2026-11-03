@@ -350,4 +350,179 @@ $dependencies
       expect(external.readAsStringSync(), 'name: outside\n');
     }
   });
+  test(
+      'migrates redundant Melos path overrides before Pub workspace resolution',
+      () async {
+    final bridgeRepo = await remote('bridge');
+    final repo = await remote('shared');
+    File(p.join(repo.path, 'pubspec.yaml')).writeAsStringSync(
+        'name: shared\nenvironment: {sdk: ^3.6.0}\ndependencies:\n'
+        '${f.dependency('bridge', bridgeRepo)}');
+    await f.commit(repo, 'Depend on bridge');
+    final clone = await f.clone(repo);
+    final ignore = File(p.join(clone.path, '.git', 'info', 'exclude'));
+    ignore.writeAsStringSync('pubspec_overrides.yaml\n', mode: FileMode.append);
+    final override = file('packages/shared/pubspec_overrides.yaml');
+    override.writeAsStringSync('# melos_managed_dependency_overrides: bridge\n'
+        'dependency_overrides:\n  bridge:\n    path: ../bridge\n');
+    app('dependencies:\n${f.dependency('shared', repo)}${f.dependency('bridge', bridgeRepo)}');
+    final before = File(p.join(clone.path, 'pubspec.yaml')).readAsStringSync();
+    await pull();
+    expect(
+        loadYaml(override.readAsStringSync())['dependency_overrides'], isNull);
+    expect(File(p.join(clone.path, 'pubspec.yaml')).readAsStringSync(), before);
+    final result = await Process.run(
+        Platform.resolvedExecutable, ['pub', 'get'],
+        workingDirectory: f.workspace.path,
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    await pull();
+    expect(loadYaml(file('pubspec.yaml').readAsStringSync())['workspace'],
+        ['apps/app', 'packages/bridge', 'packages/shared']);
+  });
+  test(
+      'removes stale Melos overrides when package already declares workspace resolution',
+      () async {
+    final bridgeRepo = await remote('bridge');
+    final repo = await remote('shared');
+    File(p.join(repo.path, 'pubspec.yaml')).writeAsStringSync(
+        'name: shared\nenvironment: {sdk: ^3.6.0}\nresolution: workspace\n'
+        'dependencies:\n${f.dependency('bridge', bridgeRepo)}');
+    await f.commit(repo, 'Use workspace resolution');
+    final clone = await f.clone(repo);
+    File(p.join(clone.path, '.git', 'info', 'exclude'))
+        .writeAsStringSync('pubspec_overrides.yaml\n', mode: FileMode.append);
+    final override = file('packages/shared/pubspec_overrides.yaml')
+      ..writeAsStringSync('# melos_managed_dependency_overrides: bridge\n'
+          'dependency_overrides:\n  bridge: {path: ../bridge}\n');
+    app('dependencies:\n${f.dependency('shared', repo)}${f.dependency('bridge', bridgeRepo)}');
+    await pull();
+    expect(override.existsSync(), false);
+    final result = await Process.run(
+        Platform.resolvedExecutable, ['pub', 'get'],
+        workingDirectory: f.workspace.path,
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    await pull();
+  });
+
+  test('user member overrides fail preflight without rewriting configuration',
+      () async {
+    final repo = await remote('shared');
+    app(
+        'dependencies:\n${f.dependency('shared', repo)}\n'
+        'dependency_overrides:\n  shared: {path: ../../packages/shared}\n',
+        resolution: true);
+    final before = f.pubspecFile.readAsStringSync();
+    await expectLater(
+        pull(),
+        throwsA(isA<StateError>().having(
+            (error) => error.message,
+            'actionable conflict',
+            contains('Remove dependency_overrides.shared'))));
+    expect(f.pubspecFile.readAsStringSync(), before);
+    expect(f.clonePath('shared').existsSync(), false);
+    expect(file('pubspec.yaml').existsSync(), false);
+  });
+
+  test('non-member path overrides stay outside generated workspace membership',
+      () async {
+    app(
+        'dependencies:\n  external_sdk: any\ndependency_overrides:\n'
+        '  external_sdk: {path: ../external}\n',
+        resolution: true);
+    final external = file('apps/external/pubspec.yaml');
+    external.parent.createSync(recursive: true);
+    external.writeAsStringSync(
+        'name: external_sdk\nversion: 1.0.0\nenvironment: {sdk: ^3.6.0}\n');
+    final before = f.pubspecFile.readAsStringSync();
+    await pull();
+    expect(loadYaml(file('pubspec.yaml').readAsStringSync())['workspace'],
+        ['apps/app']);
+    expect(f.pubspecFile.readAsStringSync(), before);
+    final result = await Process.run(
+        Platform.resolvedExecutable, ['pub', 'get'],
+        workingDirectory: f.workspace.path,
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+  });
+
+  for (final extraComment in [false, true]) {
+    test(
+        'preserves ${extraComment ? 'edited' : 'tracked'} Melos-like overrides',
+        () async {
+      final bridgeRepo = await remote('bridge');
+      final repo = await remote('shared');
+      File(p.join(repo.path, 'pubspec.yaml')).writeAsStringSync(
+          'name: shared\nenvironment: {sdk: ^3.6.0}\nresolution: workspace\n');
+      final source = '# melos_managed_dependency_overrides: bridge\n'
+          'dependency_overrides:\n  bridge: {path: ../bridge}\n'
+          '${extraComment ? '# keep my configuration\n' : ''}';
+      File(p.join(repo.path, 'pubspec_overrides.yaml'))
+          .writeAsStringSync(source);
+      await f.commit(repo, 'Tracked override');
+      final clone = await f.clone(repo);
+      if (extraComment) {
+        File(p.join(clone.path, '.git', 'info', 'exclude')).writeAsStringSync(
+            'pubspec_overrides.yaml\n',
+            mode: FileMode.append);
+        await git(clone, ['rm', '--cached', 'pubspec_overrides.yaml']);
+        await f.commit(clone, 'Untrack personal override');
+      }
+      app('dependencies:\n${f.dependency('shared', repo)}${f.dependency('bridge', bridgeRepo)}');
+      await expectLater(pull(), throwsStateError);
+      expect(file('packages/shared/pubspec_overrides.yaml').readAsStringSync(),
+          source);
+      expect(file('pubspec.yaml').existsSync(), false);
+    });
+  }
+
+  test('root overrides of a selected workspace member fail before checkout',
+      () async {
+    final repo = await remote('shared');
+    app('dependencies:\n${f.dependency('shared', repo)}');
+    file('pubspec_overrides.yaml').writeAsStringSync(
+        'dependency_overrides:\n  shared: {path: packages/shared}\n');
+    await expectLater(
+        pull(),
+        throwsA(isA<StateError>().having((error) => error.message, 'message',
+            contains('Cannot override Pub workspace member'))));
+    expect(f.clonePath('shared').existsSync(), false);
+  });
+  for (final staged in [false, true]) {
+    test(
+        staged
+            ? 'preserves a consumer override staged but not committed'
+            : 'preserves a committed consumer override in a repository above the workspace',
+        () async {
+      app('dependencies:\n  bridge: {path: ../../libraries/bridge}\n',
+          resolution: true);
+      final bridge = file('libraries/bridge/pubspec.yaml');
+      bridge.parent.createSync(recursive: true);
+      bridge.writeAsStringSync('name: bridge\nenvironment: {sdk: ^3.6.0}\n');
+      final repository = staged ? f.consumer : f.root;
+      await git(repository, ['init', '-b', 'main']);
+      await f.commit(repository, 'Initial consumer');
+      final override = file('apps/app/pubspec_overrides.yaml');
+      const source = '# melos_managed_dependency_overrides: bridge\n'
+          'dependency_overrides:\n  bridge: {path: ../../libraries/bridge}\n';
+      override.writeAsStringSync(source);
+      await git(repository,
+          ['add', '--', p.relative(override.path, from: repository.path)]);
+      if (!staged) await f.commit(repository, 'Track consumer overrides');
+      final indexBefore = await git(repository, ['diff', '--cached']);
+      await expectLater(
+          pull(),
+          throwsA(isA<StateError>().having(
+              (error) => error.message,
+              'member override conflict',
+              contains('Cannot override Pub workspace member'))));
+      expect(override.readAsStringSync(), source);
+      expect(await git(repository, ['diff', '--cached']), indexBefore);
+      expect(file('pubspec.yaml').existsSync(), false);
+    });
+  }
 }
