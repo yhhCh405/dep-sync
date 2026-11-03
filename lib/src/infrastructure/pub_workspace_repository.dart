@@ -614,8 +614,8 @@ class PubWorkspaceRepository {
     for (final record in centralized.values) {
       final origins = record['origins'] as Map<String, String?>;
       for (final owner in origins.keys.toList()) {
-        if (!members.containsKey(owner)) continue;
         final path = p.posix.join(owner, 'pubspec_overrides.yaml');
+        if (!members.containsKey(owner) && !outputs.containsKey(path)) continue;
         origins[owner] =
             outputs.containsKey(path) ? outputs[path] : local(path);
       }

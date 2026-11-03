@@ -597,6 +597,37 @@ $dependencies
         {'intl': '0.19.0'});
   });
 
+  test('inactive generated override cleanup updates centralized origins',
+      () async {
+    await pinFixture('0.19.0', '0.19.0');
+    for (final name in ['one', 'two']) {
+      final pubspec = file('apps/app/features/$name/pubspec.yaml');
+      pubspec.writeAsStringSync(
+          pubspec.readAsStringSync().replaceAll('resolution: workspace\n', ''));
+    }
+    await pull();
+    for (final name in ['one', 'two']) {
+      expect(
+          file('apps/app/features/$name/pubspec_overrides.yaml').existsSync(),
+          true);
+    }
+    app('', resolution: true);
+    await pull();
+    for (final name in ['one', 'two']) {
+      expect(
+          file('apps/app/features/$name/pubspec_overrides.yaml').existsSync(),
+          false);
+    }
+    app('dependencies:\n  one: {path: features/one}\n  two: {path: features/two}\n',
+        resolution: true);
+    await pull();
+    expect(
+        loadYaml(
+            file('pubspec.yaml').readAsStringSync())['dependency_overrides'],
+        {'intl': '0.19.0'});
+    await pull();
+  });
+
   test('conflicting Melos pins fail without changing the files', () async {
     await pinFixture('0.19.0', '0.20.0');
     final before =
