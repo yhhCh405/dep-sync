@@ -61,6 +61,32 @@ class GitClient implements GitOperations {
           followLinks: false) !=
       FileSystemEntityType.notFound;
 
+  /// Discovers the enclosing Git root and protects index entries as well as HEAD.
+  @override
+  Future<bool> isTrackedFile(File file) async {
+    var repository = file.absolute.parent;
+    while (!isRepository(repository)) {
+      final parent = repository.parent;
+      if (p.equals(parent.path, repository.path)) return false;
+      repository = parent;
+    }
+    final relative = p
+        .relative(file.absolute.path, from: repository.path)
+        .replaceAll('\\', '/');
+    final index = await run(repository,
+        ['ls-files', '--error-unmatch', '--', ':(literal)$relative']);
+    if (index.succeeded) return true;
+    if (index.exitCode != 1) {
+      throw StateError('Cannot check Git tracking for ${file.path}: '
+          '${redact(index.stderr.trim())}');
+    }
+    // HEAD also protects a file staged for deletion. Unborn repositories have
+    // no HEAD, but staged additions were already found in the index above.
+    final hash = await resolve(repository, 'HEAD');
+    return hash != null &&
+        await readFileAtCommit(repository, hash, relative) != null;
+  }
+
   /// Reads `remote.origin.url`, returning null for a missing or unreadable value.
   @override
   Future<String?> originUrl(Directory directory) async {

@@ -492,4 +492,37 @@ $dependencies
             contains('Cannot override Pub workspace member'))));
     expect(f.clonePath('shared').existsSync(), false);
   });
+  for (final staged in [false, true]) {
+    test(
+        staged
+            ? 'preserves a consumer override staged but not committed'
+            : 'preserves a committed consumer override in a repository above the workspace',
+        () async {
+      app('dependencies:\n  bridge: {path: ../../libraries/bridge}\n',
+          resolution: true);
+      final bridge = file('libraries/bridge/pubspec.yaml');
+      bridge.parent.createSync(recursive: true);
+      bridge.writeAsStringSync('name: bridge\nenvironment: {sdk: ^3.6.0}\n');
+      final repository = staged ? f.consumer : f.root;
+      await git(repository, ['init', '-b', 'main']);
+      await f.commit(repository, 'Initial consumer');
+      final override = file('apps/app/pubspec_overrides.yaml');
+      const source = '# melos_managed_dependency_overrides: bridge\n'
+          'dependency_overrides:\n  bridge: {path: ../../libraries/bridge}\n';
+      override.writeAsStringSync(source);
+      await git(repository,
+          ['add', '--', p.relative(override.path, from: repository.path)]);
+      if (!staged) await f.commit(repository, 'Track consumer overrides');
+      final indexBefore = await git(repository, ['diff', '--cached']);
+      await expectLater(
+          pull(),
+          throwsA(isA<StateError>().having(
+              (error) => error.message,
+              'member override conflict',
+              contains('Cannot override Pub workspace member'))));
+      expect(override.readAsStringSync(), source);
+      expect(await git(repository, ['diff', '--cached']), indexBefore);
+      expect(file('pubspec.yaml').existsSync(), false);
+    });
+  }
 }

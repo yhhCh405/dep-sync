@@ -17,6 +17,12 @@ abstract interface class GitOperations {
   /// This is a discovery check, not proof that the repository is healthy.
   bool isRepository(Directory directory);
 
+  /// Whether [file] is tracked in the enclosing repository's index or HEAD.
+  ///
+  /// Finds the repository independently of the dep_sync workspace boundary,
+  /// including worktrees. Returns false when no enclosing repository exists.
+  Future<bool> isTrackedFile(File file);
+
   /// Returns the configured origin URL, or null if it cannot be read.
   Future<String?> originUrl(Directory directory);
 
