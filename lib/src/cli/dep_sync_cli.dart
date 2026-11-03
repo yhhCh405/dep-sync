@@ -4,9 +4,10 @@ import '../domain/dep_pull_use_case.dart';
 import '../domain/dep_push_use_case.dart';
 import '../domain/options.dart';
 import '../infrastructure/git_client.dart';
+import '../version.dart';
 
 /// Version printed by all CLI entrypoints; kept in sync with pubspec.yaml by a test.
-const packageVersion = '0.2.1';
+const packageVersion = depSyncVersion;
 
 /// Formats the alias notice, with optional terminal color and equal-width borders.
 String formatDepSyncNotice({bool ansi = false}) {

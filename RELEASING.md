@@ -23,8 +23,8 @@ job fails with setup instructions. Tests do not require this secret.
 
 ## Release through a reviewed PR
 
-1. Update `version` in `pubspec.yaml`, `packageVersion` in
-   `lib/src/cli/dep_sync_cli.dart`, and `CHANGELOG.md` together. The CLI test checks
+1. Update `version` in `pubspec.yaml`, `depSyncVersion` in
+   `lib/src/version.dart`, and `CHANGELOG.md` together. The CLI test checks
    the version fields agree. Each new release requires a new package version;
    ordinary documentation/code pushes with an already-published version are skipped.
 2. Run the checks documented in README and review `dart pub publish --dry-run`.

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.2
+
+- Migrate redundant, untracked Melos-generated path override files when enabling
+  Pub workspaces; preserve user/tracked overrides and report member conflicts
+  before checkout instead of generating a workspace Pub cannot resolve.
+- Keep override-only packages outside automatically generated workspace membership.
+- Refresh a shell-compatible `dep-sync.lock` receipt after every successful push,
+  including already-pinned and no-dependency runs. Preserve previous receipts
+  when validation or pubspec persistence fails.
+- Share the tool version between CLI output and receipts.
+
 ## 0.2.1
 
 - Refresh the README with clearer onboarding, workspace examples, configuration

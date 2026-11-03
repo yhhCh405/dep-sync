@@ -6,6 +6,7 @@ import 'package:pub_semver/pub_semver.dart';
 import 'package:yaml/yaml.dart';
 
 import 'manifest_repository.dart';
+import 'melos_overrides.dart';
 
 /// The exact untracked override content owned by dep_sync, never user overrides.
 const generatedResolutionOverride =
@@ -29,6 +30,7 @@ class PubWorkspaceRepository {
     required Iterable<Directory> packages,
     required Set<String> ignored,
     required Future<String?> Function(String path) readFile,
+    required Future<bool> Function(String path) isTrackedFile,
   }) async {
     final root = workspace.path;
     final snapshots = <String, String?>{};
@@ -89,6 +91,11 @@ class PubWorkspaceRepository {
     final nestedMembers = <String, List<String>>{};
     final queue = [consumer.path, ...packages.map((dir) => dir.path)];
     final generated = <String, String>{};
+    final overrideMaps = <String, Map>{};
+    final overrideSources = <String, String>{};
+    final melosCandidates = <String, Map<String, String>>{};
+    final migrations = <String, String>{};
+    final removals = <String>{};
     var sdkConstraints = VersionConstraint.parse('>=3.6.0');
     while (queue.isNotEmpty) {
       final directory = p.normalize(queue.removeAt(0));
@@ -135,6 +142,20 @@ class PubWorkspaceRepository {
       final overrides = overrideSource == null
           ? <dynamic, dynamic>{}
           : _map(overrideSource, overridePath);
+      if (overrideSource != null) {
+        overrideSources[relative] = overrideSource;
+        final paths = melosManagedPathOverrides(overrideSource);
+        if (paths != null && !await isTrackedFile(p.join(root, overridePath))) {
+          melosCandidates[relative] = paths;
+        }
+      }
+      final dependencyOverrides = overrides.containsKey('dependency_overrides')
+          ? overrides['dependency_overrides']
+          : yaml['dependency_overrides'];
+      if (dependencyOverrides != null && dependencyOverrides is! Map) {
+        throw StateError('dependency_overrides in $relative must be a map.');
+      }
+      overrideMaps[relative] = dependencyOverrides as Map? ?? {};
       final resolution = overrides.containsKey('resolution')
           ? overrides['resolution']
           : yaml['resolution'];
@@ -144,7 +165,8 @@ class PubWorkspaceRepository {
         }
         if (resolution != 'workspace') {
           if (overrideSource != null &&
-              overrideSource != generatedResolutionOverride) {
+              overrideSource != generatedResolutionOverride &&
+              !melosCandidates.containsKey(relative)) {
             throw StateError(
                 'Existing $overridePath needs resolution: workspace. '
                 'Add it yourself; dep_sync will not overwrite user overrides.');
@@ -162,12 +184,9 @@ class PubWorkspaceRepository {
             'The workspace root must not declare resolution: workspace.');
       }
 
-      // Path dependencies are local members, including embedded feature packages.
-      for (final section in [
-        'dependencies',
-        'dev_dependencies',
-        'dependency_overrides'
-      ]) {
+      // Only dependency declarations introduce local members. An override must
+      // not make its own target a member, which Pub would then forbid overriding.
+      for (final section in ['dependencies', 'dev_dependencies']) {
         final declarations =
             overrides.containsKey(section) ? overrides[section] : yaml[section];
         if (declarations == null) continue;
@@ -227,6 +246,67 @@ class PubWorkspaceRepository {
         }
       }
     }
+    // Pub forbids overriding a workspace member, even with the same local path.
+    // Only positively identified, untracked Melos artifacts can be migrated.
+    for (final entry in melosCandidates.entries) {
+      final relative = entry.key;
+      final directory = p.join(root, relative);
+      final redundant = entry.value.entries.every((override) =>
+          names.containsKey(override.key) &&
+          p.equals(p.normalize(p.join(directory, override.value)),
+              p.join(root, names[override.key]!)));
+      if (!redundant) {
+        // Preserve overrides for packages outside the selected workspace graph.
+        if (members[relative]!['resolution'] != 'workspace' &&
+            !(_map(overrideSources[relative]!, relative)['resolution'] ==
+                'workspace')) {
+          throw StateError('Existing $relative/pubspec_overrides.yaml needs '
+              'resolution: workspace. Non-workspace overrides were not removed.');
+        }
+        generated.remove(p.posix.join(relative, 'pubspec_overrides.yaml'));
+        continue;
+      }
+      final path = p.posix.join(relative, 'pubspec_overrides.yaml');
+      migrations[path] = overrideSources[relative]!;
+      if (relative == '.' || members[relative]!['resolution'] == 'workspace') {
+        generated.remove(path);
+        removals.add(path);
+      } else {
+        generated[path] = generatedResolutionOverride;
+      }
+      // Dropping the file's override map reveals any original pubspec overrides.
+      final original = members[relative]!['dependency_overrides'];
+      if (original != null && original is! Map) {
+        throw StateError('dependency_overrides in $relative must be a map.');
+      }
+      overrideMaps[relative] = original as Map? ?? {};
+    }
+    final overridesSeen = <String, String>{};
+    void validateOverrides(String relative, Map overrides, String source) {
+      for (final name in overrides.keys) {
+        if (names.containsKey(name)) {
+          throw StateError('Cannot override Pub workspace member "$name" in '
+              '$source. Remove dependency_overrides.$name; workspace members '
+              'already resolve to their local packages. Only untracked, fully '
+              'Melos-managed path override files can be migrated automatically.');
+        }
+        final previousOwner = overridesSeen[name];
+        if (previousOwner != null && previousOwner != relative) {
+          throw StateError('Dependency "$name" is overridden in both '
+              '$previousOwner and $relative. Keep a single override for the workspace.');
+        }
+        overridesSeen[name.toString()] = relative;
+      }
+    }
+
+    for (final entry in overrideMaps.entries) {
+      final file = overrideSources.containsKey(entry.key) &&
+              !migrations.containsKey(
+                  p.posix.join(entry.key, 'pubspec_overrides.yaml'))
+          ? 'pubspec_overrides.yaml'
+          : 'pubspec.yaml';
+      validateOverrides(entry.key, entry.value, p.posix.join(entry.key, file));
+    }
     // Nested members are listed by their parent and must not be listed twice.
     final paths = members.keys.where((path) => path != '.').toList()..sort();
     final rootMembers =
@@ -236,6 +316,23 @@ class PubWorkspaceRepository {
     final rootOverrides = rootOverrideSource == null
         ? <dynamic, dynamic>{}
         : _map(rootOverrideSource, 'pubspec_overrides.yaml');
+    if (!members.containsKey('.')) {
+      final rootYaml = rootSource == null
+          ? <dynamic, dynamic>{}
+          : _map(rootSource, 'pubspec.yaml');
+      final overrides = rootOverrides.containsKey('dependency_overrides')
+          ? rootOverrides['dependency_overrides']
+          : rootYaml['dependency_overrides'];
+      if (overrides != null && overrides is! Map) {
+        throw StateError('Root dependency_overrides must be a map.');
+      }
+      validateOverrides(
+          '.',
+          overrides as Map? ?? {},
+          rootOverrides.containsKey('dependency_overrides')
+              ? 'pubspec_overrides.yaml'
+              : 'pubspec.yaml');
+    }
     if (rootSource == null || previous.containsKey('pubspec.yaml')) {
       if (rootOverrides.containsKey('workspace') ||
           rootOverrides['resolution'] != null) {
@@ -304,10 +401,17 @@ class PubWorkspaceRepository {
       final old = local(entry.key);
       if (old != null &&
           !previous.containsKey(entry.key) &&
-          old != entry.value) {
+          old != entry.value &&
+          old != migrations[entry.key]) {
         throw StateError('Refusing to overwrite user file ${entry.key}.');
       }
       outputs[entry.key] = entry.value;
+    }
+    for (final path in removals) {
+      if (local(path) != migrations[path]) {
+        throw StateError('$path changed while preparing its Melos migration.');
+      }
+      outputs[path] = null;
     }
     for (final path in previous.keys) {
       if (ignoredFiles.contains(path)) {

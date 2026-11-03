@@ -181,6 +181,38 @@ class DepPullUseCase {
             Directory(p.join(plan.target.path, dependency.path)),
       ],
       ignored: context.manifest.ignorePackages,
+      isTrackedFile: (path) async {
+        for (final plan in plans) {
+          if (p.isWithin(plan.target.path, path)) {
+            final relative =
+                p.relative(path, from: plan.target.path).replaceAll('\\', '/');
+            if (await _git.readFileAtCommit(
+                    plan.prepared!, plan.hash!, relative) !=
+                null) {
+              return true;
+            }
+            if (plan.existed && plan.staging == null) {
+              return await _git.readFileAtCommit(
+                      plan.target, await _git.head(plan.target), relative) !=
+                  null;
+            }
+            return false;
+          }
+        }
+        var directory = Directory(p.dirname(path));
+        while (p.equals(directory.path, context.workspace.path) ||
+            p.isWithin(context.workspace.path, directory.path)) {
+          if (_git.isRepository(directory)) {
+            final hash = await _git.head(directory);
+            final relative =
+                p.relative(path, from: directory.path).replaceAll('\\', '/');
+            return await _git.readFileAtCommit(directory, hash, relative) !=
+                null;
+          }
+          directory = directory.parent;
+        }
+        return false;
+      },
       readFile: (path) async {
         for (final plan in plans) {
           if (!p.isWithin(plan.target.path, path)) continue;
