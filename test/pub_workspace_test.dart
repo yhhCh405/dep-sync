@@ -452,7 +452,7 @@ $dependencies
 
   for (final extraComment in [false, true]) {
     test(
-        'preserves ${extraComment ? 'edited' : 'tracked'} Melos-like overrides',
+        'preserves ${extraComment ? 'edited' : 'tracked'} Melos-like overrides with CRLF',
         () async {
       final bridgeRepo = await remote('bridge');
       final repo = await remote('shared');
@@ -463,6 +463,9 @@ $dependencies
           '${extraComment ? '# keep my configuration\n' : ''}';
       File(p.join(repo.path, 'pubspec_overrides.yaml'))
           .writeAsStringSync(source);
+      // Exercise Windows-style checkout conversion on every test platform.
+      File(p.join(repo.path, '.gitattributes'))
+          .writeAsStringSync('pubspec_overrides.yaml text eol=crlf\n');
       await f.commit(repo, 'Tracked override');
       final clone = await f.clone(repo);
       if (extraComment) {
@@ -473,9 +476,11 @@ $dependencies
         await f.commit(clone, 'Untrack personal override');
       }
       app('dependencies:\n${f.dependency('shared', repo)}${f.dependency('bridge', bridgeRepo)}');
+      final override = file('packages/shared/pubspec_overrides.yaml');
+      expect(override.readAsStringSync(), contains('\r\n'));
+      final before = override.readAsBytesSync();
       await expectLater(pull(), throwsStateError);
-      expect(file('packages/shared/pubspec_overrides.yaml').readAsStringSync(),
-          source);
+      expect(override.readAsBytesSync(), before);
       expect(file('pubspec.yaml').existsSync(), false);
     });
   }
