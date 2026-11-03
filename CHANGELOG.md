@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.3
+
+- Migrate mixed Melos-generated overrides entry by entry, preserving version pins
+  while removing redundant paths to workspace members.
+- Consolidate identical duplicate version pins and equivalent non-member path
+  overrides at the workspace root, with paths rewritten relative to that root.
+- Report conflicting targets/versions and protected configuration without
+  modifying them. Record origin contents so repeated pulls and app switches
+  preserve centralized overrides and detect later user edits.
+
 ## 0.2.2
 
 - Migrate redundant, untracked Melos-generated path override files when enabling
