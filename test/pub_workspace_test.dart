@@ -530,4 +530,174 @@ $dependencies
       expect(file('pubspec.yaml').existsSync(), false);
     });
   }
+  test('mixed Melos files retain version pins after removing redundant paths',
+      () async {
+    app('dependencies:\n  bridge: {path: features/bridge}\n', resolution: true);
+    final bridge = file('apps/app/features/bridge/pubspec.yaml');
+    bridge.parent.createSync(recursive: true);
+    bridge.writeAsStringSync(
+        'name: bridge\nenvironment: {sdk: ^3.6.0}\nresolution: workspace\n');
+    final override = file('apps/app/pubspec_overrides.yaml');
+    override.writeAsStringSync(
+        '# melos_managed_dependency_overrides: intl,bridge\n'
+        'dependency_overrides:\n  intl: 0.19.0\n  bridge: {path: features/bridge}\n');
+    await pull();
+    expect(loadYaml(override.readAsStringSync())['dependency_overrides'],
+        {'intl': '0.19.0'});
+    expect(override.readAsStringSync(),
+        startsWith('# melos_managed_dependency_overrides: intl\n'));
+    final before = override.readAsStringSync();
+    await pull();
+    expect(override.readAsStringSync(), before);
+  });
+
+  Future<void> pinFixture(String first, String second) async {
+    app('dependencies:\n  one: {path: features/one}\n  two: {path: features/two}\n',
+        resolution: true);
+    for (final name in ['one', 'two']) {
+      final pubspec = file('apps/app/features/$name/pubspec.yaml');
+      pubspec.parent.createSync(recursive: true);
+      pubspec.writeAsStringSync(
+          'name: $name\nenvironment: {sdk: ^3.6.0}\nresolution: workspace\n');
+      file('apps/app/features/$name/pubspec_overrides.yaml').writeAsStringSync(
+          '# melos_managed_dependency_overrides: intl\ndependency_overrides:\n'
+          '  intl: ${name == 'one' ? first : second}\n');
+    }
+  }
+
+  test('identical Melos pins are centralized once and survive repeated pulls',
+      () async {
+    await pinFixture('0.19.0', '0.19.0');
+    await pull();
+    expect(
+        loadYaml(
+            file('pubspec.yaml').readAsStringSync())['dependency_overrides'],
+        {'intl': '0.19.0'});
+    for (final name in ['one', 'two']) {
+      expect(
+          file('apps/app/features/$name/pubspec_overrides.yaml').existsSync(),
+          false);
+    }
+    await pull();
+    expect(
+        loadYaml(
+            file('pubspec.yaml').readAsStringSync())['dependency_overrides'],
+        {'intl': '0.19.0'});
+    app('', resolution: true);
+    await pull();
+    expect(
+        loadYaml(
+            file('pubspec.yaml').readAsStringSync())['dependency_overrides'],
+        isNull);
+    app('dependencies:\n  one: {path: features/one}\n', resolution: true);
+    await pull();
+    expect(
+        loadYaml(
+            file('pubspec.yaml').readAsStringSync())['dependency_overrides'],
+        {'intl': '0.19.0'});
+  });
+
+  test('conflicting Melos pins fail without changing the files', () async {
+    await pinFixture('0.19.0', '0.20.0');
+    final before =
+        file('apps/app/features/one/pubspec_overrides.yaml').readAsBytesSync();
+    await expectLater(
+        pull(),
+        throwsA(isA<StateError>().having((e) => e.message, 'pin conflict',
+            contains('Conflicting overrides for intl'))));
+    expect(
+        file('apps/app/features/one/pubspec_overrides.yaml').readAsBytesSync(),
+        before);
+    expect(file('pubspec.yaml').existsSync(), false);
+  });
+
+  test('duplicate pins in tracked override files require a manual fix',
+      () async {
+    await pinFixture('0.19.0', '0.19.0');
+    await git(f.consumer, ['init', '-b', 'main']);
+    await f.commit(f.consumer, 'User-owned overrides');
+    await expectLater(
+        pull(),
+        throwsA(isA<StateError>().having((e) => e.message, 'protected pin',
+            contains('protected configuration'))));
+    expect(file('pubspec.yaml').existsSync(), false);
+    expect(file('apps/app/features/one/pubspec_overrides.yaml').existsSync(),
+        true);
+  });
+
+  test('centralized pins do not silently overwrite later user edits', () async {
+    await pinFixture('0.19.0', '0.19.0');
+    await pull();
+    final override = file('apps/app/features/one/pubspec_overrides.yaml');
+    override.writeAsStringSync('dependency_overrides: {intl: 0.20.0}\n');
+    await expectLater(
+        pull(),
+        throwsA(isA<StateError>().having((e) => e.message, 'edited origin',
+            contains('changed after centralizing intl'))));
+    expect(
+        override.readAsStringSync(), 'dependency_overrides: {intl: 0.20.0}\n');
+  });
+  test('identical non-member paths are consolidated relative to the root',
+      () async {
+    await pinFixture('0.19.0', '0.19.0');
+    final external = file('libraries/shared_lib/pubspec.yaml');
+    external.parent.createSync(recursive: true);
+    external
+        .writeAsStringSync('name: shared_lib\nenvironment: {sdk: ^3.6.0}\n');
+    for (final name in ['one', 'two']) {
+      file('apps/app/features/$name/pubspec_overrides.yaml').writeAsStringSync(
+          '# melos_managed_dependency_overrides: shared_lib\n'
+          'dependency_overrides:\n  shared_lib:\n'
+          '    path: ${name == 'one' ? '../../../../libraries/shared_lib' : '../../../../libraries/./shared_lib'}\n');
+    }
+    await pull();
+    final root = loadYaml(file('pubspec.yaml').readAsStringSync());
+    expect(root['dependency_overrides'], {
+      'shared_lib': {'path': 'libraries/shared_lib'}
+    });
+    expect(root['workspace'], isNot(contains('libraries/shared_lib')));
+    await pull();
+    expect(
+        loadYaml(
+            file('pubspec.yaml').readAsStringSync())['dependency_overrides'],
+        {
+          'shared_lib': {'path': 'libraries/shared_lib'}
+        });
+    final result = await Process.run(
+        Platform.resolvedExecutable, ['pub', 'get'],
+        workingDirectory: f.workspace.path,
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+  });
+
+  test('different local override targets are not consolidated', () async {
+    await pinFixture('0.19.0', '0.19.0');
+    for (final name in ['one', 'two']) {
+      file('apps/app/features/$name/pubspec_overrides.yaml').writeAsStringSync(
+          '# melos_managed_dependency_overrides: shared_lib\n'
+          'dependency_overrides:\n  shared_lib: {path: ../../../../libraries/$name}\n');
+    }
+    await expectLater(
+        pull(),
+        throwsA(isA<StateError>().having(
+            (e) => e.message,
+            'different target conflict',
+            contains('Conflicting overrides for shared_lib'))));
+    expect(file('pubspec.yaml').existsSync(), false);
+  });
+  test('a later root override cannot hide centralized configuration', () async {
+    await pinFixture('0.19.0', '0.19.0');
+    await pull();
+    file('pubspec_overrides.yaml')
+        .writeAsStringSync('dependency_overrides: {}\n');
+    await expectLater(
+        pull(),
+        throwsA(isA<StateError>().having(
+            (e) => e.message,
+            'root shadow conflict',
+            contains('would hide the centralized intl override'))));
+    expect(file('pubspec_overrides.yaml').readAsStringSync(),
+        'dependency_overrides: {}\n');
+  });
 }

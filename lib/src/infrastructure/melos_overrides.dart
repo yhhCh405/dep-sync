@@ -1,10 +1,11 @@
 import 'package:yaml/yaml.dart';
 
-/// Recognizes only Melos-generated files containing managed path overrides.
+/// Recognizes Melos-generated overrides and returns their path entries.
 ///
 /// The marker must name every override, with no extra fields, comments, or
-/// non-path values. Callers must additionally verify targets against workspace
-/// members and check that the file is untracked before migrating it.
+/// non-path structures. Scalar version pins are allowed and must be preserved
+/// by callers. Verify targets against workspace members and check that the file
+/// is untracked before migrating any path entries.
 Map<String, String>? melosManagedPathOverrides(String source) {
   final lines = source.split('\n');
   final comments =
@@ -38,6 +39,7 @@ Map<String, String>? melosManagedPathOverrides(String source) {
   final paths = <String, String>{};
   for (final entry in values.entries) {
     final value = entry.value;
+    if (value is String) continue;
     if (value is! Map ||
         value.length != 1 ||
         value['path'] is! String ||

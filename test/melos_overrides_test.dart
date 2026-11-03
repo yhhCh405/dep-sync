@@ -9,9 +9,19 @@ void main() {
             '${marker}dependency_overrides:\n  bridge: {path: ../bridge}\n'),
         {'bridge': '../bridge'});
   });
+  test('allows version pins without treating them as path entries', () {
+    expect(
+        melosManagedPathOverrides(
+            '# melos_managed_dependency_overrides: intl,bridge\n'
+            'dependency_overrides:\n  intl: 0.19.0\n  bridge: {path: ../bridge}\n'),
+        {'bridge': '../bridge'});
+    expect(
+        melosManagedPathOverrides(
+            '${marker}dependency_overrides:\n  bridge: any\n'),
+        isEmpty);
+  });
   for (final content in [
     'dependency_overrides:\n  bridge: {path: ../bridge}\n',
-    '${marker}dependency_overrides:\n  bridge: any\n',
     '${marker}dependency_overrides:\n  bridge: {path: ../bridge, version: any}\n',
     '${marker}dependency_overrides:\n  bridge: {path: ../bridge}\n  custom: any\n',
     '${marker}dependency_overrides:\n  bridge: {path: ../bridge} # keep this\n',

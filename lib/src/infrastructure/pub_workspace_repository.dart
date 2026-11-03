@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:pub_semver/pub_semver.dart';
 import 'package:yaml/yaml.dart';
+import 'package:yaml_edit/yaml_edit.dart';
 
 import 'manifest_repository.dart';
 import 'melos_overrides.dart';
@@ -44,11 +45,45 @@ class PubWorkspaceRepository {
     const statePath = '.dep-sync/pub-workspace-state.json';
     final stateSource = local(statePath);
     final previous = <String, String>{};
+    final centralized = <String, Map<String, Object?>>{};
     if (stateSource != null) {
       final state = jsonDecode(stateSource);
       if (state is! Map || state['version'] != 1 || state['files'] is! Map) {
         throw StateError(
             'Invalid $statePath. Restore the workspace state file.');
+      }
+      final pins = state['centralized_overrides'];
+      if (pins != null) {
+        if (pins is! Map) {
+          throw StateError('Invalid centralized override state.');
+        }
+        for (final entry in pins.entries) {
+          final record = entry.value;
+          if (entry.key is! String ||
+              record is! Map ||
+              !(record['value'] is String ||
+                  (record['value'] is Map &&
+                      (record['value'] as Map).length == 1 &&
+                      (record['value'] as Map)['path'] is String)) ||
+              record['origins'] is! Map) {
+            throw StateError('Invalid centralized override state.');
+          }
+          _canonicalOverride(root, '.', record['value']);
+          final origins = <String, String?>{};
+          for (final origin in (record['origins'] as Map).entries) {
+            if (origin.key is! String ||
+                (origin.value != null && origin.value is! String)) {
+              throw StateError('Invalid centralized override origin.');
+            }
+            _safeFile(root,
+                p.posix.join(origin.key as String, 'pubspec_overrides.yaml'));
+            origins[origin.key as String] = origin.value as String?;
+          }
+          centralized[entry.key as String] = {
+            'value': record['value'],
+            'origins': origins
+          };
+        }
       }
       for (final entry in (state['files'] as Map).entries) {
         final key = entry.key;
@@ -95,6 +130,7 @@ class PubWorkspaceRepository {
     final overrideSources = <String, String>{};
     final melosCandidates = <String, Map<String, String>>{};
     final migrations = <String, String>{};
+    final melosEdits = <String, String>{};
     final removals = <String>{};
     var sdkConstraints = VersionConstraint.parse('>=3.6.0');
     while (queue.isNotEmpty) {
@@ -246,16 +282,142 @@ class PubWorkspaceRepository {
         }
       }
     }
+    final rootSource = local('pubspec.yaml');
+    final rootOverrideSource = local('pubspec_overrides.yaml');
+    final rootOverrides = rootOverrideSource == null
+        ? <dynamic, dynamic>{}
+        : _map(rootOverrideSource, 'pubspec_overrides.yaml');
+    final ownsRoot = rootSource == null || previous.containsKey('pubspec.yaml');
+    final rootPins = <String, Object?>{};
+    // Preserve override provenance across repeat pulls and changes of selected app.
+    for (final entry in centralized.entries) {
+      final origins = entry.value['origins'] as Map<String, String?>;
+      for (final origin in origins.entries) {
+        if (!members.containsKey(origin.key)) continue;
+        final path = p.posix.join(origin.key, 'pubspec_overrides.yaml');
+        if (local(path) != origin.value) {
+          throw StateError('$path changed after centralizing ${entry.key}. '
+              'Reconcile the override and its centralized override state before pulling.');
+        }
+        rootPins[entry.key] = entry.value['value'];
+      }
+    }
+    final rootYaml = rootSource == null
+        ? <dynamic, dynamic>{}
+        : _map(rootSource, 'pubspec.yaml');
+    final existingRootOverrides =
+        rootOverrides.containsKey('dependency_overrides')
+            ? rootOverrides['dependency_overrides']
+            : ownsRoot
+                ? rootPins
+                : rootYaml['dependency_overrides'];
+    if (existingRootOverrides != null && existingRootOverrides is! Map) {
+      throw StateError('Root dependency_overrides must be a map.');
+    }
+    final pinLocations = <String, Map<String, Object?>>{};
+    for (final owner in overrideMaps.entries) {
+      for (final override in owner.value.entries) {
+        if (!names.containsKey(override.key)) {
+          pinLocations.putIfAbsent(
+              override.key.toString(), () => {})[owner.key] = override.value;
+        }
+      }
+    }
+    if (!members.containsKey('.')) {
+      for (final override in (existingRootOverrides as Map? ?? {}).entries) {
+        pinLocations.putIfAbsent(override.key.toString(), () => {})['.'] =
+            override.value;
+      }
+    }
+    final pinRemovals = <String, Set<String>>{};
+    for (final entry in pinLocations.entries) {
+      final locations = entry.value;
+      if (locations.length < 2) continue;
+      final canonical = <String, Object?>{};
+      for (final location in locations.entries) {
+        final value = _canonicalOverride(root, location.key, location.value);
+        if (value != null) canonical[location.key] = value;
+      }
+      if (canonical.length != locations.length) continue;
+      if (canonical.values.map(jsonEncode).toSet().length != 1) {
+        throw StateError('Conflicting overrides for ${entry.key}: '
+            '${locations.entries.map((e) => '${e.key}: ${e.value}').join('; ')}. '
+            'Choose a single override; no override files were changed.');
+      }
+      for (final owner in locations.keys.where((owner) => owner != '.')) {
+        if (!melosCandidates.containsKey(owner) ||
+            !(_map(overrideSources[owner]!, owner)['dependency_overrides']
+                    as Map)
+                .containsKey(entry.key)) {
+          throw StateError(
+              'Duplicate ${entry.key} override in protected configuration '
+              '$owner. Consolidate it manually at the workspace root.');
+        }
+      }
+      final value = canonical.values.first;
+      if (value is Map) {
+        final target = _safeFile(
+            root, p.posix.join(value['path'] as String, 'pubspec.yaml'));
+        final source = await readFile(target.path);
+        if (source == null || _map(source, target.path)['name'] != entry.key) {
+          throw StateError(
+              'The shared path override for ${entry.key} does not point '
+              'to a matching package. No override files were changed.');
+        }
+      }
+      if (!ownsRoot &&
+          jsonEncode(_canonicalOverride(root, '.',
+                  (existingRootOverrides as Map? ?? {})[entry.key])) !=
+              jsonEncode(value)) {
+        throw StateError('Add ${entry.key}: $value to the existing user root '
+            'dependency_overrides before consolidating duplicate Melos overrides.');
+      }
+      if (rootOverrides.containsKey('dependency_overrides') &&
+          jsonEncode(_canonicalOverride(
+                  root, '.', (existingRootOverrides as Map)[entry.key])) !=
+              jsonEncode(value)) {
+        throw StateError(
+            'Root pubspec_overrides.yaml would hide the consolidated '
+            '${entry.key} pin. Reconcile that root override manually.');
+      }
+      rootPins[entry.key] = value;
+      final record = centralized.putIfAbsent(
+          entry.key, () => {'value': value, 'origins': <String, String?>{}});
+      if (jsonEncode(record['value']) != jsonEncode(value)) {
+        throw StateError(
+            'Conflicting recorded override for ${entry.key}. Reconcile its override state.');
+      }
+      final origins = record['origins'] as Map<String, String?>;
+      for (final owner in locations.keys.where((owner) => owner != '.')) {
+        pinRemovals.putIfAbsent(owner, () => {}).add(entry.key);
+        origins[owner] = overrideSources[owner];
+      }
+    }
+    if (rootOverrides.containsKey('dependency_overrides')) {
+      for (final entry in rootPins.entries) {
+        if (jsonEncode(_canonicalOverride(
+                root, '.', (existingRootOverrides as Map)[entry.key])) !=
+            jsonEncode(entry.value)) {
+          throw StateError(
+              'Root pubspec_overrides.yaml would hide the centralized '
+              '${entry.key} override. Reconcile that root configuration manually.');
+        }
+      }
+    }
     // Pub forbids overriding a workspace member, even with the same local path.
     // Only positively identified, untracked Melos artifacts can be migrated.
     for (final entry in melosCandidates.entries) {
       final relative = entry.key;
       final directory = p.join(root, relative);
-      final redundant = entry.value.entries.every((override) =>
-          names.containsKey(override.key) &&
-          p.equals(p.normalize(p.join(directory, override.value)),
-              p.join(root, names[override.key]!)));
-      if (!redundant) {
+      final redundant = entry.value.entries
+          .where((override) =>
+              names.containsKey(override.key) &&
+              p.equals(p.normalize(p.join(directory, override.value)),
+                  p.join(root, names[override.key]!)))
+          .map((entry) => entry.key)
+          .toList();
+      redundant.addAll(pinRemovals[relative] ?? {});
+      if (redundant.isEmpty) {
         // Preserve overrides for packages outside the selected workspace graph.
         if (members[relative]!['resolution'] != 'workspace' &&
             !(_map(overrideSources[relative]!, relative)['resolution'] ==
@@ -268,6 +430,29 @@ class PubWorkspaceRepository {
       }
       final path = p.posix.join(relative, 'pubspec_overrides.yaml');
       migrations[path] = overrideSources[relative]!;
+      final remaining = Map<Object?, Object?>.from(overrideMaps[relative]!);
+      for (final name in redundant) {
+        remaining.remove(name);
+      }
+      if (remaining.isNotEmpty) {
+        // Remove only redundant paths. Keep version pins and non-member paths,
+        // including their YAML formatting, in the existing Melos override file.
+        final editor = YamlEditor(overrideSources[relative]!);
+        for (final name in redundant) {
+          editor.remove(['dependency_overrides', name]);
+        }
+        if (relative != '.' &&
+            members[relative]!['resolution'] != 'workspace') {
+          editor.update(['resolution'], 'workspace');
+        }
+        melosEdits[path] = editor.toString().replaceFirst(
+            RegExp(r'^# melos_managed_dependency_overrides: .+$',
+                multiLine: true),
+            '# melos_managed_dependency_overrides: ${remaining.keys.join(',')}');
+        generated.remove(path);
+        overrideMaps[relative] = remaining;
+        continue;
+      }
       if (relative == '.' || members[relative]!['resolution'] == 'workspace') {
         generated.remove(path);
         removals.add(path);
@@ -288,7 +473,7 @@ class PubWorkspaceRepository {
           throw StateError('Cannot override Pub workspace member "$name" in '
               '$source. Remove dependency_overrides.$name; workspace members '
               'already resolve to their local packages. Only untracked, fully '
-              'Melos-managed path override files can be migrated automatically.');
+              'Melos-managed files with matching path targets can be migrated automatically.');
         }
         final previousOwner = overridesSeen[name];
         if (previousOwner != null && previousOwner != relative) {
@@ -311,18 +496,15 @@ class PubWorkspaceRepository {
     final paths = members.keys.where((path) => path != '.').toList()..sort();
     final rootMembers =
         paths.where((path) => !nestedChildren.contains(path)).toList();
-    final rootSource = local('pubspec.yaml');
-    final rootOverrideSource = local('pubspec_overrides.yaml');
-    final rootOverrides = rootOverrideSource == null
-        ? <dynamic, dynamic>{}
-        : _map(rootOverrideSource, 'pubspec_overrides.yaml');
     if (!members.containsKey('.')) {
       final rootYaml = rootSource == null
           ? <dynamic, dynamic>{}
           : _map(rootSource, 'pubspec.yaml');
       final overrides = rootOverrides.containsKey('dependency_overrides')
           ? rootOverrides['dependency_overrides']
-          : rootYaml['dependency_overrides'];
+          : ownsRoot
+              ? rootPins
+              : rootYaml['dependency_overrides'];
       if (overrides != null && overrides is! Map) {
         throw StateError('Root dependency_overrides must be a map.');
       }
@@ -348,7 +530,8 @@ class PubWorkspaceRepository {
           '# Generated by dep-sync. Do not edit manually.\n'
           'name: dep_sync_workspace\npublish_to: none\n'
           "environment:\n  sdk: '>=3.6.0'\n"
-          'workspace: ${jsonEncode(rootMembers)}\n';
+          'workspace: ${jsonEncode(rootMembers)}\n'
+          '${rootPins.isEmpty ? '' : 'dependency_overrides: ${jsonEncode(rootPins)}\n'}';
     } else {
       final rootYaml = _map(rootSource, 'pubspec.yaml');
       sdkConstraints =
@@ -407,6 +590,13 @@ class PubWorkspaceRepository {
       }
       outputs[entry.key] = entry.value;
     }
+    for (final entry in melosEdits.entries) {
+      if (local(entry.key) != migrations[entry.key]) {
+        throw StateError(
+            '${entry.key} changed while preparing its Melos migration.');
+      }
+      outputs[entry.key] = entry.value;
+    }
     for (final path in removals) {
       if (local(path) != migrations[path]) {
         throw StateError('$path changed while preparing its Melos migration.');
@@ -421,9 +611,19 @@ class PubWorkspaceRepository {
         outputs[path] = null;
       }
     }
+    for (final record in centralized.values) {
+      final origins = record['origins'] as Map<String, String?>;
+      for (final owner in origins.keys.toList()) {
+        if (!members.containsKey(owner)) continue;
+        final path = p.posix.join(owner, 'pubspec_overrides.yaml');
+        origins[owner] =
+            outputs.containsKey(path) ? outputs[path] : local(path);
+      }
+    }
     outputs[statePath] = '${const JsonEncoder.withIndent('  ').convert({
           'version': 1,
           'files': generated,
+          if (centralized.isNotEmpty) 'centralized_overrides': centralized,
         })}\n';
     return PubWorkspacePlan._(root, snapshots, outputs, members.length);
   }
@@ -517,4 +717,21 @@ void _replace(File file, String? content) {
   } finally {
     temporary.deleteSync(recursive: true);
   }
+}
+
+/// Converts local override paths to a safe root-relative form for comparison.
+Object? _canonicalOverride(String root, String owner, Object? value) {
+  if (value is String) return value;
+  if (value is! Map || value.length != 1 || value['path'] is! String) {
+    return null;
+  }
+  final path = value['path'] as String;
+  if (p.isAbsolute(path) || p.windows.isAbsolute(path)) {
+    throw StateError(
+        'Consolidated path overrides must stay relative to the workspace.');
+  }
+  final target = p.normalize(p.join(root, owner, path));
+  final relative = p.relative(target, from: root).replaceAll('\\', '/');
+  _safeFile(root, p.posix.join(relative, 'pubspec.yaml'));
+  return {'path': relative};
 }
