@@ -1,6 +1,6 @@
 name: dep_sync
 description: A CLI to clone Git dependencies for Dart and Flutter apps, check out the versions in pubspec.yaml, and save local package commits back to it.
-version: 0.2.4
+version: 0.2.5
 repository: https://github.com/yhhCh405/dep-sync
 homepage: https://yehtethein.dev
 issue_tracker: https://github.com/yhhCh405/dep-sync/issues
