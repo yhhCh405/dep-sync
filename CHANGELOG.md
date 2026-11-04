@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.5
 
 - Resolve native Pub workspaces after pull using the consumer FVM pin, with
   workspace/PATH fallbacks, elapsed-time progress, logs, and `--skip-pub-get`.
