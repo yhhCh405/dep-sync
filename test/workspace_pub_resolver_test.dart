@@ -96,6 +96,48 @@ void main() {
         runner.calls.single[0], Platform.isWindows ? 'flutter.bat' : 'flutter');
     expect(runner.calls.single[1], ['pub', 'get', '--no-example']);
   });
+  for (final nested in [false, true]) {
+    test(
+        'detects Flutter membership supplied by ${nested ? 'nested' : 'root'} overrides',
+        () async {
+      void write(String path, String source) {
+        final file = File(p.join(f.workspace.path, path));
+        file.parent.createSync(recursive: true);
+        file.writeAsStringSync(source);
+      }
+
+      write('pubspec.yaml',
+          'name: root\nworkspace: ${nested ? '[apps/app]' : '[missing_package]'}\n');
+      if (nested) {
+        write(
+            'apps/app/pubspec.yaml', 'name: app\nworkspace: [missing_child]\n');
+        write(
+            'apps/app/pubspec_overrides.yaml', 'workspace: [features/child]\n');
+        write('apps/app/features/child/pubspec.yaml',
+            'name: child\ndependencies:\n  flutter: {sdk: flutter}\n');
+      } else {
+        write('pubspec_overrides.yaml', 'workspace: [apps/app]\n');
+        write('apps/app/pubspec.yaml',
+            'name: app\ndependencies:\n  flutter: {sdk: flutter}\n');
+      }
+      await WorkspacePubResolver(runner: runner)
+          .resolve(f.workspace, f.consumer, const Logger(verbose: false));
+      expect(runner.calls.single[0],
+          Platform.isWindows ? 'flutter.bat' : 'flutter');
+      expect(runner.calls.single[1], ['pub', 'get', '--no-example']);
+    });
+  }
+  test('uses effective dependency sections when selecting the SDK', () async {
+    File(p.join(f.workspace.path, 'pubspec.yaml'))
+        .writeAsStringSync('name: root\nworkspace: [apps/app]\n');
+    f.pubspecFile.writeAsStringSync(
+        'name: app\ndependencies: {flutter: {sdk: flutter}}\n');
+    File(p.join(f.consumer.path, 'pubspec_overrides.yaml'))
+        .writeAsStringSync('dependencies: {}\n');
+    await WorkspacePubResolver(runner: runner)
+        .resolve(f.workspace, f.consumer, const Logger(verbose: false));
+    expect(runner.calls.single[0], Platform.resolvedExecutable);
+  });
   test('skip flag and non-workspace mode do not invoke SDK commands', () async {
     await pull(skip: true);
     expect(runner.calls, isEmpty);

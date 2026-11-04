@@ -80,9 +80,19 @@ class WorkspacePubResolver {
         await run('fvm', ['flutter', 'pub', 'get', '--no-example'], pinned);
       } else {
         var flutter = false;
+        final visited = <String>{};
         void inspect(Directory directory) {
-          final yaml = loadYaml(File(p.join(directory.path, 'pubspec.yaml'))
+          if (!visited.add(p.normalize(directory.absolute.path))) return;
+          final source = loadYaml(File(p.join(directory.path, 'pubspec.yaml'))
               .readAsStringSync()) as Map;
+          final overrideFile =
+              File(p.join(directory.path, 'pubspec_overrides.yaml'));
+          final overrides = overrideFile.existsSync()
+              ? loadYaml(overrideFile.readAsStringSync()) as Map
+              : const {};
+          // Pub overrides replace whole fields, including workspace membership
+          // and dependency sections; do not traverse overridden-away packages.
+          final yaml = {...source, ...overrides};
           if (yaml['environment'] is Map &&
               (yaml['environment'] as Map).containsKey('flutter')) {
             flutter = true;
