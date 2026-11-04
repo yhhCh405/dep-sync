@@ -597,6 +597,83 @@ $dependencies
         {'intl': '0.19.0'});
   });
 
+  for (final pin in ['intl', 'uuid', 'custom_dependency']) {
+    test('centralizes duplicate $pin pins while preserving Git overrides',
+        () async {
+      await pinFixture('0.19.0', '0.19.0');
+      final first = file('apps/app/features/one/pubspec_overrides.yaml');
+      final second = file('apps/app/features/two/pubspec_overrides.yaml');
+      second
+          .writeAsStringSync(second.readAsStringSync().replaceAll('intl', pin));
+      const gitEntry = '  plugin:\n'
+          '    git:\n'
+          '      url: https://example.com/plugin.git\n'
+          '      ref: abc123\n'
+          '      path: packages/plugin\n';
+      first.writeAsStringSync(
+          '# melos_managed_dependency_overrides: $pin,plugin,two\n'
+          'dependency_overrides:\n  $pin: 0.19.0\n'
+          '$gitEntry  two: {path: ../two}\n');
+      await pull();
+      expect(
+          loadYaml(
+              file('pubspec.yaml').readAsStringSync())['dependency_overrides'],
+          {pin: '0.19.0'});
+      expect(loadYaml(first.readAsStringSync())['dependency_overrides'], {
+        'plugin': {
+          'git': {
+            'url': 'https://example.com/plugin.git',
+            'ref': 'abc123',
+            'path': 'packages/plugin'
+          }
+        }
+      });
+      expect(first.readAsStringSync(), contains(gitEntry));
+      expect(first.readAsStringSync(),
+          startsWith('# melos_managed_dependency_overrides: plugin\n'));
+      expect(second.existsSync(), false);
+      final before = first.readAsStringSync();
+      await pull();
+      expect(first.readAsStringSync(), before);
+      expect(
+          loadYaml(
+              file('pubspec.yaml').readAsStringSync())['dependency_overrides'],
+          {pin: '0.19.0'});
+    });
+  }
+
+  for (final tracked in [false, true]) {
+    test(
+        'mixed Git overrides preserve protection for ${tracked ? 'tracked files' : 'conflicting pins'}',
+        () async {
+      await pinFixture('0.19.0', tracked ? '0.19.0' : '0.20.0');
+      final first = file('apps/app/features/one/pubspec_overrides.yaml');
+      final mixed = first
+          .readAsStringSync()
+          .replaceFirst('overrides: intl', 'overrides: intl,plugin');
+      first.writeAsStringSync(
+          '$mixed  plugin: {git: https://example.com/plugin.git}\n');
+      if (tracked) {
+        await git(f.consumer, ['init', '-b', 'main']);
+        await f.commit(f.consumer, 'Track mixed overrides');
+      }
+      final before = first.readAsStringSync();
+      final second = file('apps/app/features/two/pubspec_overrides.yaml');
+      final secondBefore = second.readAsStringSync();
+      await expectLater(
+          pull(),
+          throwsA(isA<StateError>().having(
+              (error) => error.message,
+              'override protection',
+              contains(tracked
+                  ? 'protected configuration'
+                  : 'Conflicting overrides'))));
+      expect(first.readAsStringSync(), before);
+      expect(second.readAsStringSync(), secondBefore);
+      expect(file('pubspec.yaml').existsSync(), false);
+    });
+  }
+
   test('inactive generated override cleanup updates centralized origins',
       () async {
     await pinFixture('0.19.0', '0.19.0');

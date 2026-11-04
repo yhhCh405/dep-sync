@@ -3,8 +3,8 @@ import 'package:yaml/yaml.dart';
 /// Recognizes Melos-generated overrides and returns their path entries.
 ///
 /// The marker must name every override, with no extra fields, comments, or
-/// non-path structures. Scalar version pins are allowed and must be preserved
-/// by callers. Verify targets against workspace members and check that the file
+/// unsupported structures. Scalar version pins and Git overrides are allowed
+/// and must be preserved by callers. Verify targets against workspace members and check that the file
 /// is untracked before migrating any path entries.
 Map<String, String>? melosManagedPathOverrides(String source) {
   final lines = source.split('\n');
@@ -40,6 +40,19 @@ Map<String, String>? melosManagedPathOverrides(String source) {
   for (final entry in values.entries) {
     final value = entry.value;
     if (value is String) continue;
+    if (value is Map && value.length == 1 && value.containsKey('git')) {
+      final git = value['git'];
+      if (git is String && git.trim().isNotEmpty) continue;
+      if (git is Map &&
+          git['url'] is String &&
+          (git['url'] as String).trim().isNotEmpty &&
+          git.keys.every((key) => ['url', 'ref', 'path'].contains(key)) &&
+          git.values
+              .every((field) => field is String && field.trim().isNotEmpty)) {
+        continue;
+      }
+      return null;
+    }
     if (value is! Map ||
         value.length != 1 ||
         value['path'] is! String ||
