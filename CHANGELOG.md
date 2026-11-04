@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.4
 
 - Preserve Git overrides in untracked Melos-generated files while consolidating
   identical duplicate version pins and migrating redundant workspace paths.
