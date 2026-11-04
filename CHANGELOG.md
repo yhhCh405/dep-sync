@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Resolve native Pub workspaces after pull using the consumer FVM pin, with
+  workspace/PATH fallbacks, elapsed-time progress, logs, and `--skip-pub-get`.
+- Back up and retire recognized legacy generated Melos configuration without
+  rewriting user-owned files. Drop redundant saved path pins when selecting
+  the corresponding workspace member.
+
 ## 0.2.4
 
 - Preserve Git overrides in untracked Melos-generated files while consolidating

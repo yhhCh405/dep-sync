@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../infrastructure/git_client.dart';
+import '../infrastructure/workspace_pub_resolver.dart';
 import '../infrastructure/git_url_normalizer.dart';
 import '../infrastructure/pubspec_repository.dart';
 import '../infrastructure/pub_workspace_repository.dart';
@@ -22,9 +23,14 @@ import 'sync_context.dart';
 /// writes owned root/override files without editing package SDK constraints.
 class DepPullUseCase {
   /// Uses the Git command-line and YAML file adapters unless substitutes are supplied.
-  DepPullUseCase({GitOperations? git, PubspecStore? pubspecs})
-      : _git = git ?? GitClient(),
+  DepPullUseCase(
+      {GitOperations? git,
+      PubspecStore? pubspecs,
+      WorkspacePubResolver? resolver})
+      : _resolver = resolver ?? const WorkspacePubResolver(),
+        _git = git ?? GitClient(),
         _pubspecs = pubspecs ?? const PubspecRepository();
+  final WorkspacePubResolver _resolver;
   final GitOperations _git;
   final PubspecStore _pubspecs;
 
@@ -52,6 +58,9 @@ class DepPullUseCase {
         final plan = await _prepareWorkspace(context, []);
         plan.apply();
         logger.ok('Prepared Pub workspace (${plan.memberCount} packages).');
+        if (!options.skipPubGet) {
+          await _resolver.resolve(context.workspace, context.consumer, logger);
+        }
       }
       logger.info('No managed Git dependencies.');
       return;
@@ -157,6 +166,9 @@ class DepPullUseCase {
         workspacePlan.apply();
         logger.ok(
             'Prepared Pub workspace (${workspacePlan.memberCount} packages).');
+        if (!options.skipPubGet) {
+          await _resolver.resolve(context.workspace, context.consumer, logger);
+        }
       }
     } finally {
       for (final plan in plans) {

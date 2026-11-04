@@ -6,6 +6,7 @@
 class PullOptions {
   /// Creates pull options; omitted [cwd] uses the process working directory.
   const PullOptions({
+    this.skipPubGet = false,
     this.repoUpdate = false,
     this.pullBranchLatest = false,
     this.force = false,
@@ -14,6 +15,9 @@ class PullOptions {
     this.fallbackBranch,
     this.cwd,
   });
+
+  /// Prepare the workspace without running dependency resolution.
+  final bool skipPubGet;
 
   /// Fetch and use the origin tip when the declaration names a branch.
   final bool repoUpdate;

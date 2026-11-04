@@ -57,7 +57,7 @@ Future<void> runDepSync(List<String> arguments) async {
     exitCode = 64;
   } on ProcessException catch (error) {
     stderr.writeln(
-        '[x] Could not run ${error.executable}. Install Git and make it available on PATH. ${redact(error.message)}');
+        '[x] Could not run ${error.executable}. Ensure the executable is installed and available on PATH. ${redact(error.message)}');
     exitCode = 1;
   } on FileSystemException catch (error) {
     stderr.writeln('[x] ${error.message}: ${error.path ?? ''}');
@@ -79,6 +79,10 @@ class _PullCommand extends Command<int> {
   /// Registers checkout, replacement, fallback, directory, and verbosity options.
   _PullCommand() {
     argParser
+      ..addFlag('skip-pub-get',
+          negatable: false,
+          help:
+              'Prepare the native Pub workspace without resolving dependencies.')
       ..addFlag('repo-update',
           negatable: false,
           help: 'Fetch and use the remote tip for branch refs.')
@@ -119,6 +123,7 @@ class _PullCommand extends Command<int> {
       usageException('Unexpected positional arguments.');
     }
     await DepPullUseCase().run(PullOptions(
+      skipPubGet: argResults!.flag('skip-pub-get'),
       repoUpdate: argResults!.flag('repo-update'),
       pullBranchLatest: argResults!.flag('pull-branch'),
       force: argResults!.flag('force'),
